@@ -1,0 +1,10 @@
+anthropic
+fastapi
+uvicorn
+chromadb
+python-dotenv
+tiktoken
+pydantic
+voyageai
+tenacity
+slowapi

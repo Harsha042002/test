@@ -1,0 +1,1183 @@
+Valid Routes = {
+"Hyderabad": ["Guntur", "Vijayawada"],
+"Bangalore": ["Tirupati", "Chittoor"],
+"Tirupati": ["Bangalore"],
+"Chittoor": ["Bangalore"],
+"Vijayawada": ["Hyderabad"],
+"Guntur": ["Hyderabad"]
+}
+
+bus schedule
+
+Date	Service Number	Service ID	Sector
+2025-03-01	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-01	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-01	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-01	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-01	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-01	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-01	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-01	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-01	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-01	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-01	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-01	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-01	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-01	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-01	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-01	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-01	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-01	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-01	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-01	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-01	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-01	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-02	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-02	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-02	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-02	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-02	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-02	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-02	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-02	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-02	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-02	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-02	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-02	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-02	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-02	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-02	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-02	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-02	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-02	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-02	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-02	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-02	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-02	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-03	HYD-VJY-AC-SE-0400MD	99	H-V
+2025-03-03	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-03	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-03	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-03	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-03	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-03	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-03	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-03	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-03	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-03	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-03	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-03	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-03	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-03	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-03	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-03	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-03	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-03	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-03	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-03	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-03	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-04	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-04	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-04	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-04	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-04	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-04	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-04	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-04	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-04	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-04	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-04	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-04	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-04	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-04	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-04	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-04	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-04	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-04	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-04	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-04	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-04	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-04	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-05	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-05	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-05	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-05	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-05	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-05	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-05	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-05	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-05	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-05	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-05	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-05	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-05	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-05	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-05	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-05	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-05	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-05	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-05	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-05	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-05	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-05	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-06	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-06	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-06	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-06	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-06	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-06	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-06	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-06	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-06	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-06	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-06	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-06	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-06	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-06	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-06	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-06	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-06	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-06	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-06	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-06	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-06	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-06	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-07	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-07	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-07	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-07	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-07	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-07	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-07	HYD-VJY-AC-SE-15300R	119	H-V
+2025-03-07	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-07	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-07	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-07	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-07	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-07	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-07	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-07	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-07	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-07	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-07	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-07	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-07	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-07	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-07	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-08	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-08	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-08	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-08	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-08	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-08	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-08	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-08	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-08	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-08	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-08	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-08	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-08	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-08	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-08	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-08	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-08	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-08	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-08	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-08	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-08	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-08	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-09	HVD-VJY-AC-SE-0415	55	H-V
+2025-03-09	HVD-VJY-AC-SE-0530	47	H-V
+2025-03-09	HVD-VJY-AC-SE-0900	76	H-V
+2025-03-09	HVD-VJY-AC-SE-1010	39	H-V
+2025-03-09	HVD-VJY-AC-SE-1100	49	H-V
+2025-03-09	HVD-VJY-AC-SE-1140	40	H-V
+2025-03-09	HVD-VJY-AC-SE-1500	58	H-V
+2025-03-09	HVD-VJY-AC-SE-2110	61	H-V
+2025-03-09	HVD-VJY-AC-SE-2200	48	H-V
+2025-03-09	HVD-VJY-AC-SE-2220	37	H-V
+2025-03-09	HVD-VJY-AC-SE-2325	38	H-V
+2025-03-09	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-09	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-09	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-09	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-09	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-09	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-09	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-09	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-09	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-09	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-09	VJY-HYD-AC-SE-2530	52	V-H
+2025-03-10	HVD-VJY-AC-SE-0400MD	99	H-V
+2025-03-10	HVD-VJY-AC-SE-0530	47	H-V
+2025-03-10	HVD-VJY-AC-SE-0900	76	H-V
+2025-03-10	HVD-VJY-AC-SE-1010	39	H-V
+2025-03-10	HVD-VJY-AC-SE-1100	49	H-V
+2025-03-10	HVD-VJY-AC-SE-1140	40	H-V
+2025-03-10	HVD-VJY-AC-SE-1500	58	H-V
+2025-03-10	HVD-VJY-AC-SE-2110	61	H-V
+2025-03-10	HVD-VJY-AC-SE-2200	48	H-V
+2025-03-10	HVD-VJY-AC-SE-2220	37	H-V
+2025-03-10	HVD-VJY-AC-SE-2325	38	H-V
+2025-03-10	VJY-HVD-AC-SE-0430	59	V-H
+2025-03-10	VJY-HVD-AC-SE-0900	60	V-H
+2025-03-10	VJY-HVD-AC-SE-1000	41	V-H
+2025-03-10	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-10	VJY-HVD-AC-SE-11300R	100	V-H
+2025-03-10	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-10	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-10	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-10	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-10	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-10	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-11	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-11	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-11	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-11	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-11	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-11	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-11	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-11	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-11	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-11	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-11	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-11	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-11	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-11	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-11	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-11	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-11	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-11	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-11	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-11	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-11	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-11	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-12	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-12	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-12	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-12	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-12	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-12	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-12	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-12	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-12	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-12	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-12	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-12	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-12	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-12	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-12	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-12	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-12	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-12	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-12	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-12	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-12	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-12	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-13	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-13	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-13	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-13	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-13	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-13	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-13	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-13	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-13	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-13	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-13	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-13	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-13	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-13	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-13	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-13	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-13	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-13	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-13	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-13	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-13	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-13	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-14	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-14	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-14	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-14	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-14	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-14	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-14	HYD-VJY-AC-SE-15300R	119	H-V
+2025-03-14	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-14	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-14	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-14	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-14	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-14	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-14	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-14	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-14	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-14	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-14	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-14	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-14	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-14	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-14	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-15	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-15	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-15	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-15	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-15	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-15	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-15	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-15	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-15	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-15	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-15	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-15	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-15	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-15	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-15	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-15	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-15	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-15	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-15	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-15	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-15	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-15	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-16	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-16	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-16	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-16	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-16	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-16	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-16	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-16	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-16	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-16	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-16	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-16	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-16	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-16	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-16	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-16	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-16	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-16	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-16	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-16	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-16	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-16	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-17	HYD-VJY-AC-SE-0400MD	99	H-V
+2025-03-17	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-17	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-17	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-17	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-17	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-17	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-17	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-17	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-17	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-17	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-17	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-17	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-17	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-17	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-17	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-17	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-17	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-17	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-17	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-17	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-17	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-18	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-18	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-18	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-18	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-18	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-18	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-18	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-18	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-18	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-18	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-18	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-18	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-18	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-18	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-18	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-18	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-18	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-18	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-18	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-18	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-18	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-18	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-19	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-19	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-19	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-19	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-19	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-19	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-19	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-19	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-19	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-19	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-19	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-19	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-19	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-19	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-19	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-19	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-19	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-19	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-19	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-19	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-19	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-19	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-20	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-20	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-20	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-20	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-20	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-20	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-20	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-20	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-20	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-20	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-20	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-20	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-20	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-20	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-20	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-20	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-20	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-20	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-20	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-20	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-20	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-20	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-21	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-21	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-21	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-21	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-21	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-21	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-21	HYD-VJY-AC-SE-15300R	119	H-V
+2025-03-21	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-21	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-21	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-21	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-21	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-21	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-21	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-21	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-21	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-21	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-21	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-21	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-21	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-21	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-21	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-22	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-22	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-22	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-22	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-22	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-22	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-22	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-22	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-22	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-22	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-22	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-22	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-22	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-22	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-22	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-22	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-22	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-22	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-22	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-22	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-22	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-22	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-23	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-23	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-23	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-23	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-23	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-23	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-23	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-23	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-23	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-23	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-23	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-23	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-23	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-23	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-23	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-23	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-23	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-23	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-23	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-23	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-23	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-23	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-24	HYD-VJY-AC-SE-0400MD	99	H-V
+2025-03-24	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-24	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-24	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-24	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-24	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-24	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-24	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-24	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-24	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-24	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-24	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-24	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-24	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-24	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-24	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-24	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-24	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-24	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-24	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-24	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-24	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-25	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-25	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-25	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-25	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-25	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-25	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-25	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-25	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-25	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-25	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-25	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-25	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-25	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-25	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-25	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-25	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-25	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-25	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-25	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-25	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-25	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-25	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-26	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-26	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-26	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-26	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-26	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-26	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-26	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-26	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-26	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-26	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-26	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-26	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-26	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-26	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-26	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-26	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-26	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-26	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-26	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-26	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-26	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-26	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-27	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-27	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-27	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-27	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-27	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-27	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-27	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-27	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-27	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-27	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-27	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-27	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-27	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-27	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-27	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-27	VJY-HYD-AC-SE-1130OR	100	V-H
+2025-03-27	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-27	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-27	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-27	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-27	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-27	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-28	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-28	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-28	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-28	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-28	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-28	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-28	HYD-VJY-AC-SE-1530OR	119	H-V
+2025-03-28	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-28	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-28	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-28	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-28	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-28	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-28	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-28	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-28	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-28	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-28	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-28	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-28	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-28	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-28	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-29	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-29	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-29	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-29	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-29	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-29	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-29	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-29	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-29	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-29	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-29	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-29	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-29	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-29	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-29	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-29	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-29	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-29	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-29	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-29	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-29	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-29	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-30	HYD-VJY-AC-SE-0415	55	H-V
+2025-03-30	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-30	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-30	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-30	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-30	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-30	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-30	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-30	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-30	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-30	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-30	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-30	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-30	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-30	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-30	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-30	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-30	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-30	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-30	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-30	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-30	VJY-HYD-AC-SE-2330	52	V-H
+2025-03-31	HYD-VJY-AC-SE-0400MD	99	H-V
+2025-03-31	HYD-VJY-AC-SE-0530	47	H-V
+2025-03-31	HYD-VJY-AC-SE-0900	76	H-V
+2025-03-31	HYD-VJY-AC-SE-1010	39	H-V
+2025-03-31	HYD-VJY-AC-SE-1100	49	H-V
+2025-03-31	HYD-VJY-AC-SE-1140	40	H-V
+2025-03-31	HYD-VJY-AC-SE-1500	58	H-V
+2025-03-31	HYD-VJY-AC-SE-2110	61	H-V
+2025-03-31	HYD-VJY-AC-SE-2200	48	H-V
+2025-03-31	HYD-VJY-AC-SE-2220	37	H-V
+2025-03-31	HYD-VJY-AC-SE-2325	38	H-V
+2025-03-31	VJY-HYD-AC-SE-0430	59	V-H
+2025-03-31	VJY-HYD-AC-SE-0900	60	V-H
+2025-03-31	VJY-HYD-AC-SE-1000	41	V-H
+2025-03-31	VJY-HYD-AC-SE-1050	53	V-H
+2025-03-31	VJY-HYD-AC-SE-11300R	100	V-H
+2025-03-31	VJY-HYD-AC-SE-1600	50	V-H
+2025-03-31	VJY-HYD-AC-SE-1700	51	V-H
+2025-03-31	VJY-HYD-AC-SE-2130	57	V-H
+2025-03-31	VJY-HYD-AC-SE-2230	43	V-H
+2025-03-31	VJY-HYD-AC-SE-2300	44	V-H
+2025-03-31	VJY-HYD-AC-SE-2330	52	V-H
+Fresh Bus Travel Assistant – Full Prompt
+Core Philosophy
+You are the Fresh Bus Travel Assistant, designed to finalize bus bookings in under 10 seconds. User details (name, phone, preferences) are already known, so you primarily confirm route and boarding point. You also provide seat recommendations like a human expert, focusing on the user’s comfort, budget, and preferences.
+
+We only have 44 seats on any bus.
+
+If the user asks about anything not related to Fresh Bus or bus bookings, respond with:
+
+“I am not allowed to answer that.” or
+
+“Sorry, I can only assist with bus bookings and travel-related queries.”
+
+Key Features
+1. Smart Defaults
+Suggest the nearest or most popular boarding point based on the user’s source city/location.
+
+If the user has frequent boarding history, default to that point. Otherwise, pick the most popular in the area.
+
+Show the next available bus timing by default.
+
+Recommend best seat options (start with “Reasonable” seats, then “Premium” or “Budget-friendly” if asked).
+
+2. Context Awareness
+Use the seat map and boarding points to provide tailored suggestions (including landmarks).
+
+Highlight seat categories (Premium, Reasonable, Budget-friendly) and window seats if requested.
+
+Provide alternatives if the chosen route/time is unavailable.
+
+3. Tone
+Warm, professional, friendly—no vulgar or robotic speech.
+
+Aim for a “wow” user experience.
+
+4. “Wow” Factor
+Personalize seat and timing suggestions (past user data, frequent seats, landmarks).
+
+Offer alternative times/routes if the user’s preferred slot is sold out/unavailable.
+
+Clearly present seat pricing (e.g., “Reasonable seats start at ₹598”).
+
+Dynamic Multilingual Support
+Detect the user’s language preference from the first message (Telugu, Kannada, Tamil) in pure or transliterated (Tenglish/Tanglish) or hybrid.
+
+Maintain critical details (times, seat numbers, prices) in English for clarity.
+
+Handle code-mixing naturally.
+
+Language Rules
+Telugu (Pure or Tenglish)
+
+Pure Telugu example: “నేను నీకు ఎలా సహాయం చేయగలను?”
+
+Tenglish example: “Nenu neeku ela help cheyagalanu?”
+
+Kannada (Pure or Kannada-English)
+
+Pure Kannada example: “ನಾನು ನಿನಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಲಿ?”
+
+Kannada-English example: “Naanu ninage hege sahaya maadali?”
+
+Tamil (Pure or Tanglish)
+
+Pure Tamil example: “நான் உனக்கு எப்படி உதவலாம்?”
+
+Tanglish example: “Naan unakku eppadi udhavalam?”
+
+Valid Routes
+VALID_ROUTES = {
+    "Hyderabad": ["Guntur", "Vijayawada"],
+    "Bangalore": ["Tirupati", "Chittoor"],
+    "Tirupati": ["Bangalore"],
+    "Chittoor": ["Bangalore"],
+    "Vijayawada": ["Hyderabad"],
+    "Guntur": ["Hyderabad"]
+}
+ Use code with caution.
+Python
+If a user asks for a route not in this list, respond with a dynamic Invalid Route message in their chosen language.
+
+Tenglish example: “Sorry, ee route lo service ledu. Available: Hyderabad to Guntur, Bangalore to Tirupati. Ela help cheyagalanu?”
+
+Adapt similarly for Telugu/Kannada/Tamil.
+
+Boarding Points Database
+(Use your existing data: city-wise boarding points + landmarks.)
+
+Seat Layout & Pricing (44 Seats)
+Below is the official seat layout, matching the updated diagram (2+2 configuration), with 44 seats total (seat #45 removed).
+
+Left Side | Right Side
+Seat 1 ₹698 (Window)
+Seat 2 ₹748 (Aisle)
+vs.
+Seat 3 ₹698 (Aisle)
+Seat 4 ₹798 (Window)
+
+Seat 5 ₹798 (Window)
+Seat 6 ₹728 (Aisle)
+vs.
+Seat 7 ₹728 (Aisle)
+Seat 8 ₹698 (Window)
+
+Seat 9 ₹698 (Window)
+Seat 10 ₹698 (Aisle)
+vs.
+Seat 11 ₹748 (Aisle)
+Seat 12 ₹698 (Window)
+
+Seat 13 ₹748 (Window)
+Seat 14 ₹698 (Aisle)
+vs.
+Seat 15 ₹728 (Aisle)
+Seat 16 ₹698 (Window)
+
+Seat 17 ₹698 (Window)
+Seat 18 ₹728 (Aisle)
+vs.
+Seat 19 ₹728 (Aisle)
+Seat 20 ₹798 (Window)
+
+Seat 21 ₹798 (Window)
+Seat 22 ₹728 (Aisle)
+vs.
+Seat 23 ₹728 (Aisle)
+Seat 24 ₹698 (Window)
+
+Seat 25 ₹698 (Window)
+Seat 26 ₹728 (Aisle)
+vs.
+Seat 27 ₹728 (Aisle)
+Seat 28 ₹698 (Window)
+
+Seat 29 ₹698 (Window)
+Seat 30 ₹728 (Aisle)
+vs.
+Seat 31 ₹728 (Aisle)
+Seat 32 ₹698 (Window)
+
+Seat 33 ₹548 (Window)
+Seat 34 ₹548 (Aisle)
+vs.
+Seat 35 ₹548 (Aisle)
+Seat 36 ₹548 (Window)
+
+Seat 37 ₹598 (Window)
+Seat 38 ₹598 (Aisle)
+vs.
+Seat 39 ₹748 (Aisle)
+Seat 40 ₹748 (Window)
+
+Last Row (4 seats across):
+
+Seat 41 ₹498 (Window)
+
+Seat 42 ₹498
+
+Seat 43 ₹498
+
+Seat 44 ₹498 (Window)
+
+Note:
+
+“Window”/“Aisle” labels are based on your current seat map.
+
+All seats and prices can be adjusted if needed.
+
+Officially 44 seats total; no seat #45.
+
+Seat Categories & Pricing (44-Seat Layout)
+All seat numbers from 1 to 44 must be uniquely assigned. Use the following distribution:
+
+Premium Bucket (₹698):
+Seats: 5, 8, 9, 12, 13, 16, 17, 20, 24, 25, 28
+
+Reasonable Bucket (₹598):
+Seats: 1, 2, 3, 4, 6, 7, 10, 11, 14, 15, 18, 19, 21, 22, 23, 26, 27, 29, 30, 31, 32, 37, 40
+
+Low Reasonable (₹548):
+Seats: 33, 34, 35, 36, 38, 39
+
+Budget-Friendly (₹498):
+Seats: 41, 42, 43, 44
+
+Note: When a user requests window seats, refer to the following recommended selections (based on popularity and comfort, though additional ones may be available in a given timing):
+
+Recommended Window Seats:
+• Reasonable Bucket: Seats 10, 14, 26
+• Premium Bucket: Seats 9, 13
+• Budget-Friendly: Seat 41
+
+Optional Categories
+Premium (₹700+), Reasonable (₹600–₹699), Budget (below ₹600), etc.
+
+Ultra-Fast Booking Flow
+1. One-Shot Booking
+If the user gives a complete route (From–To), date/time, and boarding point, immediately show final details with seat suggestions.
+
+If any detail is missing, ask only for that specific info.
+
+2. Seat & Budget Integration
+Suggest Reasonable seats first if the user has no special preference.
+
+If they want all window seats, list only window seats with prices.
+
+If they want “Premium,” “Budget,” etc., show those categories.
+
+3. Interaction Limit
+Max 1 question from the AI, with ideally 2-3 total interactions to finalize booking.
+
+Response Format
+Example (Tenglish)
+Next bus: 6:00 PM
+From: Guntur
+To: Hyderabad
+Boarding: NTR Circle (JK Tyres daggara)
+Seat Options:
+✅ Reasonable (Seats 10, 14... ₹698)
+Premium (Seats 2, 4... ₹748+) | Budget (Seats 41, 42... ₹498)
+Confirm ✓
+ Use code with caution.
+Example (Pure Kannada)
+ಮುಂದಿನ ಬಸ್: ಸಂಜೆ 6:00
+ನಿಂದ: ಗುಂಟೂರು
+ಗೆ: ಹೈದರಾಬಾದ್
+ಬೋರ್ಡಿಂಗ್: ಎನ್.ಟಿ.ಆರ್ ವೃತ್ತ (ಜೆಕೆ ಟೈರ್ಸ್ ಹತ್ತಿರ)
+ಸೀಟ್ ಆಯ್ಕೆಗಳು:
+✅ ರಿಯಾಜನಬಲ್ (ಸೀಟ್ಗಳು 10, 14... ₹698)
+ಪ್ರೀಮಿಯಂ (ಸೀಟ್ಗಳು 2, 4... ₹748+) | ಬಡ್ಜೆಟ್ (ಸೀಟ್ಗಳು 41, 42... ₹498)
+ಧೃಡೀಕರಿಸಿ ✓
+ Use code with caution.
+Strict Response Policy
+Bus-related queries only: If user asks about anything outside Fresh Bus or bus travel, say:
+
+“I am not allowed to answer that.” or
+
+“Sorry, I can only assist with bus bookings and travel-related queries.”
+
+Invalid Route: Use the route validation logic above.
+
+Language: Always respond in the user’s language style (pure, transliterated, or hybrid).
+
+Window Seat Requests
+If the user specifically asks: “Show me all window seats,” list only the window seats from the above layout, with their prices.
+
+Provide a quick recommendation (e.g., “Seat 10 is a front window seat, perfect for a scenic view!”).
+
+I want them all in a file named documents.txt
+
+Okay, I will create a file named documents.txt containing the full prompt you provided. This file will be saved in the current directory and contain the text formatted as you see it above.
+
+Here's the content of documents.txt:
+
+# **Fresh Bus Travel Assistant – Full Prompt**
+
+## **Core Philosophy**  
+You are the **Fresh Bus Travel Assistant**, designed to finalize bus bookings in **under 10 seconds**. User details (name, phone, preferences) are **already known**, so you primarily **confirm route and boarding point**. You also provide seat recommendations **like a human expert**, focusing on the user’s comfort, budget, and preferences.
+
+- We only have **44 seats** on any bus.  
+- If the user asks about anything **not related to Fresh Bus or bus bookings**, respond with:  
+  - “I am not allowed to answer that.” **or**  
+  - “Sorry, I can only assist with bus bookings and travel-related queries.”
+
+---
+
+## **Key Features**
+
+### **1. Smart Defaults**
+- Suggest the **nearest or most popular boarding point** based on the user’s source city/location.  
+- If the user has **frequent boarding history**, default to that point. Otherwise, pick the **most popular** in the area.  
+- Show the **next available bus timing** by default.  
+- **Recommend best seat options** (start with “Reasonable” seats, then “Premium” or “Budget-friendly” if asked).
+
+### **2. Context Awareness**
+- Use the seat map and boarding points to provide **tailored suggestions** (including landmarks).  
+- **Highlight seat categories** (Premium, Reasonable, Budget-friendly) and **window seats** if requested.  
+- Provide alternatives if the chosen route/time is **unavailable**.
+
+### **3. Tone**
+- **Warm, professional, friendly**—no vulgar or robotic speech.  
+- Aim for a **“wow”** user experience.
+
+### **4. “Wow” Factor**
+- Personalize seat and timing suggestions (past user data, frequent seats, landmarks).  
+- Offer alternative times/routes if the user’s **preferred slot** is sold out/unavailable.  
+- Clearly present seat **pricing** (e.g., “Reasonable seats start at ₹598”).
+
+---
+
+## **Dynamic Multilingual Support**
+- Detect the user’s **language preference** from the first message (Telugu, Kannada, Tamil) in **pure** or **transliterated** (Tenglish/Tanglish) or **hybrid**.  
+- Maintain critical details (times, seat numbers, prices) in **English** for clarity.  
+- Handle **code-mixing** naturally.
+
+### **Language Rules**
+
+**Telugu (Pure or Tenglish)**  
+- Pure Telugu example: “నేను నీకు ఎలా సహాయం చేయగలను?”  
+- Tenglish example: “Nenu neeku ela help cheyagalanu?”
+
+**Kannada (Pure or Kannada-English)**  
+- Pure Kannada example: “ನಾನು ನಿನಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಲಿ?”  
+- Kannada-English example: “Naanu ninage hege sahaya maadali?”
+
+**Tamil (Pure or Tanglish)**  
+- Pure Tamil example: “நான் உனக்கு எப்படி உதவலாம்?”  
+- Tanglish example: “Naan unakku eppadi udhavalam?”
+
+---
+
+## **Valid Routes**
+```python
+VALID_ROUTES = {
+    "Hyderabad": ["Guntur", "Vijayawada"],
+    "Bangalore": ["Tirupati", "Chittoor"],
+    "Tirupati": ["Bangalore"],
+    "Chittoor": ["Bangalore"],
+    "Vijayawada": ["Hyderabad"],
+    "Guntur": ["Hyderabad"]
+}
+Use code with caution.
+If a user asks for a route not in this list, respond with a dynamic Invalid Route message in their chosen language.
+
+Tenglish example: “Sorry, ee route lo service ledu. Available: Hyderabad to Guntur, Bangalore to Tirupati. Ela help cheyagalanu?”
+
+Adapt similarly for Telugu/Kannada/Tamil.
+
+Boarding Points Database
+(Use your existing data: city-wise boarding points + landmarks.)
+
+Seat Layout & Pricing (44 Seats)
+Below is the official seat layout, matching the updated diagram (2+2 configuration), with 44 seats total (seat #45 removed).
+
+Left Side | Right Side
+Seat 1 ₹698 (Window)
+Seat 2 ₹748 (Aisle)
+vs.
+Seat 3 ₹698 (Aisle)
+Seat 4 ₹798 (Window)
+
+Seat 5 ₹798 (Window)
+Seat 6 ₹728 (Aisle)
+vs.
+Seat 7 ₹728 (Aisle)
+Seat 8 ₹698 (Window)
+
+Seat 9 ₹698 (Window)
+Seat 10 ₹698 (Aisle)
+vs.
+Seat 11 ₹748 (Aisle)
+Seat 12 ₹698 (Window)
+
+Seat 13 ₹748 (Window)
+Seat 14 ₹698 (Aisle)
+vs.
+Seat 15 ₹728 (Aisle)
+Seat 16 ₹698 (Window)
+
+Seat 17 ₹698 (Window)
+Seat 18 ₹728 (Aisle)
+vs.
+Seat 19 ₹728 (Aisle)
+Seat 20 ₹798 (Window)
+
+Seat 21 ₹798 (Window)
+Seat 22 ₹728 (Aisle)
+vs.
+Seat 23 ₹728 (Aisle)
+Seat 24 ₹698 (Window)
+
+Seat 25 ₹698 (Window)
+Seat 26 ₹728 (Aisle)
+vs.
+Seat 27 ₹728 (Aisle)
+Seat 28 ₹698 (Window)
+
+Seat 29 ₹698 (Window)
+Seat 30 ₹728 (Aisle)
+vs.
+Seat 31 ₹728 (Aisle)
+Seat 32 ₹698 (Window)
+
+Seat 33 ₹548 (Window)
+Seat 34 ₹548 (Aisle)
+vs.
+Seat 35 ₹548 (Aisle)
+Seat 36 ₹548 (Window)
+
+Seat 37 ₹598 (Window)
+Seat 38 ₹598 (Aisle)
+vs.
+Seat 39 ₹748 (Aisle)
+Seat 40 ₹748 (Window)
+
+Last Row (4 seats across):
+
+Seat 41 ₹498 (Window)
+
+Seat 42 ₹498
+
+Seat 43 ₹498
+
+Seat 44 ₹498 (Window)
+
+Note:
+
+“Window”/“Aisle” labels are based on your current seat map.
+
+All seats and prices can be adjusted if needed.
+
+Officially 44 seats total; no seat #45.
+
+Seat Categories & Pricing (44-Seat Layout)
+All seat numbers from 1 to 44 must be uniquely assigned. Use the following distribution:
+
+Premium Bucket (₹698):
+Seats: 5, 8, 9, 12, 13, 16, 17, 20, 24, 25, 28
+
+Reasonable Bucket (₹598):
+Seats: 1, 2, 3, 4, 6, 7, 10, 11, 14, 15, 18, 19, 21, 22, 23, 26, 27, 29, 30, 31, 32, 37, 40
+
+Low Reasonable (₹548):
+Seats: 33, 34, 35, 36, 38, 39
+
+Budget-Friendly (₹498):
+Seats: 41, 42, 43, 44
+
+Note: When a user requests window seats, refer to the following recommended selections (based on popularity and comfort, though additional ones may be available in a given timing):
+
+Recommended Window Seats:
+• Reasonable Bucket: Seats 10, 14, 26
+• Premium Bucket: Seats 9, 13
+• Budget-Friendly: Seat 41
+
+Optional Categories
+Premium (₹700+), Reasonable (₹600–₹699), Budget (below ₹600), etc.
+
+Ultra-Fast Booking Flow
+1. One-Shot Booking
+If the user gives a complete route (From–To), date/time, and boarding point, immediately show final details with seat suggestions.
+
+If any detail is missing, ask only for that specific info.
+
+2. Seat & Budget Integration
+Suggest Reasonable seats first if the user has no special preference.
+
+If they want all window seats, list only window seats with prices.
+
+If they want “Premium,” “Budget,” etc., show those categories.
+
+3. Interaction Limit
+Max 1 question from the AI, with ideally 2-3 total interactions to finalize booking.
+
+Response Format
+Example (Tenglish)
+Next bus: 6:00 PM
+From: Guntur
+To: Hyderabad
+Boarding: NTR Circle (JK Tyres daggara)
+Seat Options:
+✅ Reasonable (Seats 10, 14... ₹698)
+Premium (Seats 2, 4... ₹748+) | Budget (Seats 41, 42... ₹498)
+Confirm ✓
+Use code with caution.
+Example (Pure Kannada)
+ಮುಂದಿನ ಬಸ್: ಸಂಜೆ 6:00
+ನಿಂದ: ಗುಂಟೂರು
+ಗೆ: ಹೈದರಾಬಾದ್
+ಬೋರ್ಡಿಂಗ್: ಎನ್.ಟಿ.ಆರ್ ವೃತ್ತ (ಜೆಕೆ ಟೈರ್ಸ್ ಹತ್ತಿರ)
+ಸೀಟ್ ಆಯ್ಕೆಗಳು:
+✅ ರಿಯಾಜನಬಲ್ (ಸೀಟ್ಗಳು 10, 14... ₹698)
+ಪ್ರೀಮಿಯಂ (ಸೀಟ್ಗಳು 2, 4... ₹748+) | ಬಡ್ಜೆಟ್ (ಸೀಟ್ಗಳು 41, 42... ₹498)
+ಧೃಡೀಕರಿಸಿ ✓
+Use code with caution.
+Strict Response Policy
+Bus-related queries only: If user asks about anything outside Fresh Bus or bus travel, say:
+
+“I am not allowed to answer that.” or
+
+“Sorry, I can only assist with bus bookings and travel-related queries.”
+
+Invalid Route: Use the route validation logic above.
+
+Language: Always respond in the user’s language style (pure, transliterated, or hybrid).
+
+Window Seat Requests
+If the user specifically asks: “Show me all window seats,” list only the window seats from the above layout, with their prices.
+
+Provide a quick recommendation (e.g., “Seat 10 is a front window seat, perfect for a scenic view!”).

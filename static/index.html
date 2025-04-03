@@ -1,0 +1,2747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fresh Bus Travel Assistant</title>
+    <style>
+        :root {
+            --primary-color: #0a58ca;
+            --secondary-color: #6c757d;
+            --success-color: #198754;
+            --danger-color: #dc3545;
+            --warning-color: #ffc107;
+            --light-color: #f8f9fa;
+            --dark-color: #212529;
+            --border-color: #dee2e6;
+            --shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background-color: #f5f5f5;
+            color: var(--dark-color);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+            color: var(--primary-color);
+        }
+        
+        .subheader {
+            text-align: center;
+            margin-bottom: 30px;
+            color: var(--secondary-color);
+            font-size: 1rem;
+        }
+        
+        .controls-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+        
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 220px);
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            background-color: white;
+        }
+        
+        .toolbar {
+            display: flex;
+            padding: 10px 15px;
+            background-color: #e9ecef;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .toolbar-button {
+            background: none;
+            border: none;
+            color: var(--secondary-color);
+            margin-right: 15px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .toolbar-button:hover {
+            color: var(--primary-color);
+        }
+        
+        .message-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background-color: white;
+        }
+        
+        .input-container {
+            display: flex;
+            padding: 15px;
+            background-color: #f0f0f0;
+            border-top: 1px solid var(--border-color);
+        }
+        
+        .message-input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 30px;
+            margin-right: 10px;
+            font-size: 16px;
+        }
+        
+        .message-input:focus {
+            border-color: var(--primary-color);
+            outline: none;
+        }
+        
+        .send-button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 30px;
+            padding: 12px 25px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background-color 0.3s;
+        }
+        
+        .send-button:hover {
+            background-color: #0046ad;
+        }
+        
+        .control-button {
+            background-color: var(--secondary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 15px;
+            cursor: pointer;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background-color 0.3s;
+        }
+        
+        .location-button {
+            background-color: var(--primary-color);
+        }
+        
+        .location-button:hover {
+            background-color: #0046ad;
+        }
+        
+        .history-button {
+            background-color: #6c757d;
+        }
+        
+        .history-button:hover {
+            background-color: #5a6268;
+        }
+        
+        .clear-button {
+            background-color: #dc3545;
+        }
+        
+        .clear-button:hover {
+            background-color: #c82333;
+        }
+        
+        .refresh-button {
+            background-color: #28a745;
+        }
+        
+        .refresh-button:hover {
+            background-color: #218838;
+        }
+        
+        .gender-container {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .gender-label {
+            font-size: 0.9rem;
+            color: var(--secondary-color);
+        }
+        
+        .gender-option {
+            cursor: pointer;
+            padding: 4px 12px;
+            border-radius: 30px;
+            border: 1px solid var(--border-color);
+            background-color: var(--light-color);
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        
+        .gender-option.selected {
+            background-color: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+        
+        .message-bubble {
+            margin-bottom: 20px;
+            max-width: 85%;
+            word-wrap: break-word;
+        }
+        
+        .user-message {
+            margin-left: auto;
+            text-align: right;
+        }
+        
+        .user-message-text {
+            background-color: #e3f2fd;
+            padding: 12px 16px;
+            border-radius: 18px 18px 4px 18px;
+            display: inline-block;
+            text-align: left;
+        }
+        
+        .ai-message {
+            margin-right: auto;
+        }
+        
+        .ai-message-text {
+            background-color: #f1f3f4;
+            padding: 12px 16px;
+            border-radius: 18px 18px 18px 4px;
+            display: inline-block;
+        }
+        
+        .message-time {
+            font-size: 0.8rem;
+            color: var(--secondary-color);
+            margin-top: 4px;
+            margin-bottom: 10px;
+        }
+        
+        /* Bus Card Styles */
+        .bus-card {
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            margin: 15px 0;
+            background-color: white;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+            transition: transform 0.2s, box-shadow 0.2s;
+            position: relative;
+        }
+        
+        .bus-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+        }
+        
+        .bus-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .bus-emoji {
+            font-size: 1.4rem;
+            margin-right: 8px;
+        }
+        
+        .bus-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            display: flex;
+            align-items: center;
+        }
+        
+        .bus-duration {
+            font-weight: 600;
+            color: var(--secondary-color);
+            white-space: nowrap;
+            margin-left: 10px;
+        }
+        
+        .bus-info {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        
+        .info-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .price {
+            color: var(--success-color);
+            font-weight: 600;
+        }
+        
+        .seats {
+            color: var(--secondary-color);
+        }
+        
+        .rating {
+            color: #ff9800;
+        }
+        
+        .rating i {
+            margin-right: 3px;
+        }
+        
+        .bus-points {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            gap: 15px;
+        }
+        
+        .boarding, .dropping {
+            flex: 1;
+        }
+        
+        .point-label {
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: var(--dark-color);
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .point-location {
+            font-size: 0.95rem;
+        }
+        
+        .distance {
+            font-size: 0.85rem;
+            color: var(--secondary-color);
+            margin-top: 3px;
+        }
+        
+        .seat-categories {
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 12px;
+        }
+        
+        .seat-category {
+            margin-bottom: 12px;
+        }
+        
+        .seat-category:last-child {
+            margin-bottom: 0;
+        }
+        
+        .category-title {
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: var(--dark-color);
+        }
+        
+        .seat-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .seat-option {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.9rem;
+        }
+        
+        .seat-number {
+            font-weight: 600;
+        }
+        
+        .seat-price {
+            color: var(--success-color);
+        }
+        
+        .book-button {
+            background-color: var(--success-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            margin-top: 15px;
+            cursor: pointer;
+            font-weight: 600;
+            float: right;
+            transition: background-color 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .book-button:hover {
+            background-color: #146c43;
+        }
+        
+        .error-message {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            border-radius: 8px;
+            padding: 10px 15px;
+            margin: 10px 0;
+            font-size: 0.9rem;
+        }
+        
+        .self-correction {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+            border-radius: 8px;
+            padding: 10px 15px;
+            margin: 10px 0;
+            font-size: 0.9rem;
+        }
+        
+        .verification-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: #28a745;
+            color: white;
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
+        
+        /* Loading indicator */
+        .loading-indicator {
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .typing-indicator {
+            display: flex;
+            align-items: center;
+        }
+        
+        .typing-dot {
+            height: 10px;
+            width: 10px;
+            margin: 0 2px;
+            background-color: var(--secondary-color);
+            border-radius: 50%;
+            animation: typing-dot-bounce 1.3s ease-in-out infinite;
+        }
+        
+        .typing-dot:nth-child(1) {
+            animation-delay: 0s;
+        }
+        
+        .typing-dot:nth-child(2) {
+            animation-delay: 0.15s;
+        }
+        
+        .typing-dot:nth-child(3) {
+            animation-delay: 0.3s;
+        }
+        
+        @keyframes typing-dot-bounce {
+            0%, 60%, 100% {
+                transform: translateY(0);
+            }
+            30% {
+                transform: translateY(-5px);
+            }
+        }
+        
+        /* Voice Input */
+        .voice-button {
+            background: none;
+            border: none;
+            color: var(--secondary-color);
+            margin-right: 10px;
+            cursor: pointer;
+            font-size: 1.25rem;
+            display: flex;
+            align-items: center;
+            transition: color 0.3s;
+        }
+        
+        .voice-button:hover {
+            color: var(--primary-color);
+        }
+        
+        .voice-button.recording {
+            color: var(--danger-color);
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .controls-container {
+                justify-content: space-between;
+            }
+            
+            .control-button {
+                font-size: 0.85rem;
+                padding: 8px 12px;
+            }
+            
+            .bus-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .bus-duration {
+                margin-left: 0;
+                margin-top: 5px;
+            }
+            
+            .bus-points {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .boarding, .dropping {
+                margin-bottom: 0;
+            }
+            
+            .seat-options {
+                flex-direction: column;
+                gap: 8px;
+            }
+        }
+        
+        /* History panel styles */
+        .history-panel {
+            position: fixed;
+            top: 0;
+            right: -350px;
+            width: 350px;
+            height: 100vh;
+            background-color: white;
+            box-shadow: -2px 0 10px rgba(0, 0, 0, 0.1);
+            transition: right 0.3s ease;
+            z-index: 1000;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        .history-panel.active {
+            right: 0;
+        }
+        
+        .history-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .history-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: var(--dark-color);
+        }
+        
+        .close-history {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: var(--secondary-color);
+        }
+        
+        .conversation-item {
+            padding: 10px;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+        }
+        
+        .conversation-item:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .conversation-query {
+            font-weight: 600;
+            margin-bottom: 5px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .conversation-date {
+            font-size: 0.8rem;
+            color: var(--secondary-color);
+        }
+        
+        .toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        
+        .toast {
+            background-color: rgba(255, 255, 255, 0.9);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            padding: 12px 20px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            animation: slideIn 0.3s, fadeOut 0.5s 2.5s forwards;
+            max-width: 300px;
+        }
+        
+        .toast-success {
+            border-left: 4px solid var(--success-color);
+        }
+        
+        .toast-info {
+            border-left: 4px solid var(--primary-color);
+        }
+        
+        .toast-warning {
+            border-left: 4px solid var(--warning-color);
+        }
+        
+        .toast-error {
+            border-left: 4px solid var(--danger-color);
+        }
+        
+        .toast-icon {
+            font-size: 1.2rem;
+        }
+        
+        .toast-success .toast-icon {
+            color: var(--success-color);
+        }
+        
+        .toast-info .toast-icon {
+            color: var(--primary-color);
+        }
+        
+        .toast-warning .toast-icon {
+            color: var(--warning-color);
+        }
+        
+        .toast-error .toast-icon {
+            color: var(--danger-color);
+        }
+        
+        .toast-message {
+            font-size: 0.9rem;
+            color: var(--dark-color);
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+            }
+            to {
+                opacity: 0;
+                display: none;
+            }
+        }
+        
+        /* Login Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        
+        .modal {
+            background-color: white;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            padding: 30px;
+            position: relative;
+        }
+        
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: none;
+            border: none;
+            font-size: 1.2rem;
+            color: var(--secondary-color);
+            cursor: pointer;
+        }
+        
+        .modal-title {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            text-align: center;
+            color: var(--primary-color);
+        }
+        
+        .modal-subtitle {
+            font-size: 1rem;
+            margin-bottom: 25px;
+            text-align: center;
+            color: var(--secondary-color);
+        }
+        
+        .modal-form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .input-label {
+            font-weight: 600;
+            color: var(--dark-color);
+        }
+        
+        .modal-input {
+            padding: 12px 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        
+        .modal-input:focus {
+            border-color: var(--primary-color);
+            outline: none;
+        }
+        
+        .form-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 10px;
+        }
+        
+        .otp-container {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+        }
+        
+        .otp-input {
+            width: 45px;
+            height: 50px;
+            text-align: center;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+        }
+        
+        .otp-input:focus {
+            border-color: var(--primary-color);
+            outline: none;
+        }
+        
+        .modal-button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 25px;
+            cursor: pointer;
+            font-weight: 600;
+            width: 100%;
+            transition: background-color 0.3s;
+        }
+        
+        .modal-button:hover {
+            background-color: #0046ad;
+        }
+        
+        .modal-button:disabled {
+            background-color: var(--secondary-color);
+            cursor: not-allowed;
+        }
+        
+        .resend-link {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+        
+        .resend-link:hover {
+            text-decoration: underline;
+        }
+        
+        .otp-timer {
+            font-size: 0.9rem;
+            color: var(--secondary-color);
+            margin-top: 5px;
+        }
+        
+        /* User info display */
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 5px 12px;
+            background-color: #e9ecef;
+            border-radius: 30px;
+            cursor: pointer;
+        }
+        
+        .user-avatar {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background-color: var(--primary-color);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        
+        .user-name {
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        
+        .login-button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 30px;
+            padding: 8px 15px;
+            cursor: pointer;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: background-color 0.3s;
+        }
+        
+        .login-button:hover {
+            background-color: #0046ad;
+        }
+        
+        /* Live tracking card styles */
+        .tracking-card {
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            margin: 15px 0;
+            background-color: white;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        }
+        
+        .tracking-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--primary-color);
+            font-weight: 600;
+        }
+        
+        .tracking-content {
+            padding: 10px 0;
+        }
+        
+        .tracking-item {
+            display: flex;
+            margin-bottom: 8px;
+        }
+        
+        .tracking-label {
+            font-weight: 600;
+            min-width: 150px;
+        }
+        
+        .tracking-value {
+            flex: 1;
+        }
+        
+        .tracking-live {
+            display: inline-block;
+            background-color: #28a745;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            margin-left: 8px;
+        }
+        
+        .tracking-completed {
+            display: inline-block;
+            background-color: #6c757d;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            margin-left: 8px;
+        }
+        
+        .tracking-upcoming {
+            display: inline-block;
+            background-color: #0d6efd;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            margin-left: 8px;
+        }
+        
+        .refresh-tracking-btn {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 16px;
+            margin-top: 15px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background-color 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .refresh-tracking-btn:hover {
+            background-color: #0046ad;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="header">Fresh Bus Travel Assistant</h1>
+        <div class="subheader">Ask questions about bus schedules, routes, and services</div>
+        
+        <div class="controls-container">
+            <div class="gender-container">
+                <div class="gender-option" id="maleOption">Male</div>
+                <div class="gender-option" id="femaleOption">Female</div>
+            </div>
+            
+            <button class="control-button history-button" id="historyButton">
+                <i class="fas fa-history"></i> History
+            </button>
+            
+            <button class="control-button clear-button" id="clearSession">
+                <i class="fas fa-trash"></i> Clear Session
+            </button>
+            
+            <button class="control-button refresh-button location-button" id="getLocation">
+                <i class="fas fa-map-marker-alt"></i> Refresh Location
+            </button>
+            
+            <!-- New login button -->
+            <button class="login-button" id="loginButton">
+                <i class="fas fa-sign-in-alt"></i> Login
+            </button>
+        </div>
+        
+        <div class="chat-container">
+            <div class="message-container" id="messageContainer">
+                <div class="message-bubble ai-message">
+                    <div class="ai-message-text">
+                        Hello! I'm your Fresh Bus travel assistant. I can help you find buses, check availability, and book tickets. How can I assist you today?
+                    </div>
+                    <div class="message-time">Just now</div>
+                </div>
+            </div>
+            
+            <div class="input-container">
+                <button class="voice-button" id="voiceButton">
+                    <i class="fas fa-microphone"></i>
+                </button>
+                <input type="text" class="message-input" id="messageInput" placeholder="Ask about bus routes, times, or booking...">
+                <button class="send-button" id="sendButton">
+                    <i class="fas fa-paper-plane"></i> Send
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- History Panel -->
+    <div class="history-panel" id="historyPanel">
+        <div class="history-header">
+            <div class="history-title">Conversation History</div>
+            <button class="close-history" id="closeHistory">&times;</button>
+        </div>
+        <div id="historyContent">
+            <div class="loading-indicator">
+                <div class="typing-indicator">
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Login Modal -->
+    <div class="modal-overlay" id="loginModal" style="display: none;">
+        <div class="modal">
+            <button class="modal-close" id="closeLoginModal">&times;</button>
+            
+            <!-- Mobile Entry Step -->
+            <div id="mobileEntryStep">
+                <h2 class="modal-title">Login to Fresh Bus</h2>
+                <p class="modal-subtitle">Enter your mobile number to receive an OTP</p>
+                
+                <form class="modal-form" id="mobileForm">
+                    <div class="input-group">
+                        <label class="input-label" for="mobileNumber">Mobile Number</label>
+                        <input type="tel" id="mobileNumber" class="modal-input" placeholder="Enter 10-digit mobile number" maxlength="10" pattern="[0-9]{10}" required>
+                    </div>
+                    
+                    <button type="submit" class="modal-button" id="sendOtpButton">Send OTP</button>
+                </form>
+            </div>
+            
+            <!-- OTP Entry Step -->
+            <div id="otpEntryStep" style="display: none;">
+                <h2 class="modal-title">Verify OTP</h2>
+                <p class="modal-subtitle">Enter the OTP sent to <span id="displayMobile"></span></p>
+                
+                <form class="modal-form" id="otpForm">
+                    <div class="input-group">
+                        <label class="input-label">One-Time Password</label>
+                        <div class="otp-container">
+                            <input type="text" class="otp-input" maxlength="1" pattern="[0-9]" required>
+                            <input type="text" class="otp-input" maxlength="1" pattern="[0-9]" required>
+                            <input type="text" class="otp-input" maxlength="1" pattern="[0-9]" required>
+                            <input type="text" class="otp-input" maxlength="1" pattern="[0-9]" required>
+                            <input type="text" class="otp-input" maxlength="1" pattern="[0-9]" required>
+                            <input type="text" class="otp-input" maxlength="1" pattern="[0-9]" required>
+                        </div>
+                        <div class="otp-timer" id="otpTimer">Resend OTP in 30s</div>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <a href="#" class="resend-link" id="resendOtp" style="visibility: hidden;">Resend OTP</a>
+                        <button type="submit" class="modal-button" id="verifyOtpButton">Verify OTP</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // DOM Elements
+            const messageContainer = document.getElementById('messageContainer');
+            const messageInput = document.getElementById('messageInput');
+            const sendButton = document.getElementById('sendButton');
+            const clearButton = document.getElementById('clearSession');
+            const locationButton = document.getElementById('getLocation');
+            const historyButton = document.getElementById('historyButton');
+            const historyPanel = document.getElementById('historyPanel');
+            const closeHistory = document.getElementById('closeHistory');
+            const historyContent = document.getElementById('historyContent');
+            const maleOption = document.getElementById('maleOption');
+            const femaleOption = document.getElementById('femaleOption');
+            const voiceButton = document.getElementById('voiceButton');
+            const toastContainer = document.getElementById('toastContainer');
+            
+            // Login Modal Elements
+            const loginButton = document.getElementById('loginButton');
+            const loginModal = document.getElementById('loginModal');
+            const closeLoginModal = document.getElementById('closeLoginModal');
+            const mobileEntryStep = document.getElementById('mobileEntryStep');
+            const otpEntryStep = document.getElementById('otpEntryStep');
+            const mobileForm = document.getElementById('mobileForm');
+            const otpForm = document.getElementById('otpForm');
+            const mobileNumberInput = document.getElementById('mobileNumber');
+            const displayMobile = document.getElementById('displayMobile');
+            const sendOtpButton = document.getElementById('sendOtpButton');
+            const verifyOtpButton = document.getElementById('verifyOtpButton');
+            const resendOtp = document.getElementById('resendOtp');
+            const otpTimer = document.getElementById('otpTimer');
+            const otpInputs = document.querySelectorAll('.otp-input');
+            
+            // Global variables
+            let userLocation = null;
+            let sessionId = localStorage.getItem('sessionId') || null;
+            let selectedGender = localStorage.getItem('selectedGender') || null;
+            let isProcessing = false;
+            let loadingIndicator = null;
+            let mediaRecorder = null;
+            let audioChunks = [];
+            let isRecording = false;
+            let timerInterval = null;
+            let timerSeconds = 30;
+            
+            // Auth variables
+            let authToken = localStorage.getItem('authToken') || null;
+            let refreshToken = localStorage.getItem('refreshToken') || null;
+            let userDetails = JSON.parse(localStorage.getItem('userDetails') || '{}');
+            let currentMobile = '';
+            let deviceId = localStorage.getItem('deviceId') || `device_${Math.random().toString(36).substring(2, 10)}`;
+            
+            // Save deviceId if not already saved
+            if (!localStorage.getItem('deviceId')) {
+                localStorage.setItem('deviceId', deviceId);
+            }
+            
+            // Initialize UI
+            if (selectedGender === 'male') {
+                maleOption.classList.add('selected');
+            } else if (selectedGender === 'female') {
+                femaleOption.classList.add('selected');
+            }
+            
+            // Check if user is already logged in
+            updateLoginButton();
+            
+            // If user is logged in, fetch their profile
+            if (authToken) {
+                fetchUserProfile();
+            }
+            
+            // Update location button text
+            locationButton.innerHTML = '<i class="fas fa-map-marker-alt"></i> Requesting location...';
+            
+            // Get user location on page load
+            getUserLocation();
+            
+            // Toast message function
+            function showToast(message, type = 'info') {
+                const toast = document.createElement('div');
+                toast.className = `toast toast-${type}`;
+                
+                let icon = 'info-circle';
+                if (type === 'success') icon = 'check-circle';
+                if (type === 'warning') icon = 'exclamation-triangle';
+                if (type === 'error') icon = 'times-circle';
+                
+                toast.innerHTML = `
+                    <div class="toast-icon">
+                        <i class="fas fa-${icon}"></i>
+                    </div>
+                    <div class="toast-message">${message}</div>
+                `;
+                
+                toastContainer.appendChild(toast);
+                
+                // Remove toast after animation completes
+                setTimeout(() => {
+                    if (toast.parentNode) {
+                        toast.parentNode.removeChild(toast);
+                    }
+                }, 3000);
+            }
+            
+            // Format time
+            function formatTime() {
+                const now = new Date();
+                let hours = now.getHours();
+                let minutes = now.getMinutes();
+                const ampm = hours >= 12 ? 'PM' : 'AM';
+                
+                hours = hours % 12;
+                hours = hours ? hours : 12;
+                minutes = minutes < 10 ? '0' + minutes : minutes;
+                
+                return `${hours}:${minutes} ${ampm}`;
+            }
+            
+            // Get user location
+            function getUserLocation() {
+                if (navigator.geolocation) {
+                    locationButton.innerHTML = '<i class="fas fa-sync fa-spin"></i> Getting location...';
+                    
+                    navigator.geolocation.getCurrentPosition(
+                        function(position) {
+                            userLocation = {
+                                latitude: position.coords.latitude,
+                                longitude: position.coords.longitude
+                            };
+                            
+                            console.log("Location obtained:", userLocation);
+                            
+                            locationButton.innerHTML = '<i class="fas fa-check-circle"></i> Location Active';
+                            locationButton.style.backgroundColor = '#28a745';
+                            
+                            // Send location to update server
+                            updateLocationOnServer(userLocation);
+                            showToast('Location updated successfully', 'success');
+                        },
+                        function(error) {
+                            console.error("Geolocation error:", error);
+                            locationButton.innerHTML = '<i class="fas fa-map-marker-alt"></i> Refresh Location';
+                            showToast('Could not get your location', 'error');
+                        },
+                        { 
+                            enableHighAccuracy: true,
+                            timeout: 10000,
+                            maximumAge: 0
+                        }
+                    );
+                } else {
+                    locationButton.innerHTML = '<i class="fas fa-map-marker-alt"></i> Location Not Supported';
+                    console.log("Geolocation not supported");
+                    showToast('Your browser doesn\'t support location services', 'warning');
+                }
+            }
+            
+            // Update location on server
+            function updateLocationOnServer(location) {
+                if (!sessionId) return;
+                
+                fetch('/update-location', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        location: location
+                    })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Location updated on server:', data);
+                })
+                .catch(error => {
+                    console.error('Error updating location on server:', error);
+                });
+            }
+            
+            // Fetch user profile data
+            async function fetchUserProfile() {
+                try {
+                    if (!authToken) return null;
+                    
+                    const response = await fetch('/profile', {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${authToken}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch profile');
+                    }
+                    
+                    const profileData = await response.json();
+                    console.log('Profile data loaded:', profileData);
+                    
+                    // Update userDetails with complete profile data
+                    userDetails = {...userDetails, ...profileData};
+                    localStorage.setItem('userDetails', JSON.stringify(userDetails));
+                    
+                    // Update UI with the new data
+                    updateLoginButton();
+                    
+                    return profileData;
+                } catch (error) {
+                    console.error('Error fetching user profile:', error);
+                    showToast('Could not load complete profile', 'warning');
+                    return null;
+                }
+            }
+            
+            // Update login button based on auth status
+            function updateLoginButton() {
+                if (authToken) {
+                    // User is logged in
+                    const name = userDetails.name || userDetails.mobile || 'User';
+                    const initials = name.substring(0, 1).toUpperCase();
+                    
+                    // Replace login button with user info - prioritize showing name if available
+                    loginButton.innerHTML = `
+                        <div class="user-info">
+                            <div class="user-avatar">${initials}</div>
+                            <div class="user-name">${userDetails.name || formatMobile(userDetails.mobile || '')}</div>
+                        </div>
+                    `;
+                    loginButton.title = "Logged in as " + (userDetails.name || userDetails.mobile);
+                    loginButton.classList.add('logged-in');
+                } else {
+                    // User is not logged in
+                    loginButton.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login';
+                    loginButton.classList.remove('logged-in');
+                }
+            }
+            
+            // Format mobile number for display
+            function formatMobile(mobile) {
+                if (mobile.length === 10) {
+                    return mobile.substring(0, 3) + 'XXXX' + mobile.substring(7);
+                }
+                return mobile;
+            }
+            
+            // Add message to chat
+            function addMessage(content, isUser = false) {
+                const messageElement = document.createElement('div');
+                messageElement.className = isUser ? 'message-bubble user-message' : 'message-bubble ai-message';
+                
+                const textElement = document.createElement('div');
+                textElement.className = isUser ? 'user-message-text' : 'ai-message-text';
+                
+                const timeElement = document.createElement('div');
+                timeElement.className = 'message-time';
+                timeElement.textContent = formatTime();
+                
+                // If it's not user message, parse for bus cards or tracking info
+                if (!isUser) {
+                    if (content.includes('🚌')) {
+                        textElement.innerHTML = parseBusInfoToHTML(content);
+                    } else if (content.includes('Trip ID:') && (content.includes('Current Location:') || content.includes('journey'))) {
+                        textElement.innerHTML = parseTrackingInfoToHTML(content);
+                    } else {
+                        textElement.textContent = content;
+                    }
+                } else {
+                    textElement.textContent = content;
+                }
+                
+                messageElement.appendChild(textElement);
+                messageElement.appendChild(timeElement);
+                messageContainer.appendChild(messageElement);
+                messageContainer.scrollTop = messageContainer.scrollHeight;
+                
+                return messageElement;
+            }
+            
+            // Show loading indicator
+            function showLoading() {
+                if (loadingIndicator) {
+                    return;
+                }
+                
+                loadingIndicator = document.createElement('div');
+                loadingIndicator.className = 'message-bubble ai-message';
+                
+                const typingIndicator = document.createElement('div');
+                typingIndicator.className = 'typing-indicator';
+                
+                for (let i = 0; i < 3; i++) {
+                    const dot = document.createElement('div');
+                    dot.className = 'typing-dot';
+                    typingIndicator.appendChild(dot);
+                }
+                
+                loadingIndicator.appendChild(typingIndicator);
+                messageContainer.appendChild(loadingIndicator);
+                messageContainer.scrollTop = messageContainer.scrollHeight;
+            }
+            
+            // Hide loading indicator
+            function hideLoading() {
+                if (loadingIndicator && loadingIndicator.parentNode) {
+                    loadingIndicator.parentNode.removeChild(loadingIndicator);
+                    loadingIndicator = null;
+                }
+            }
+            
+            // Parse tracking info to HTML
+            function parseTrackingInfoToHTML(content) {
+                // Check if this is tracking information
+                if (!content.includes('Trip ID:')) {
+                    return content;
+                }
+                
+                let html = '';
+                
+                // Check for different journey types
+                if (content.includes('ONGOING JOURNEY:') || content.includes('Current Location:')) {
+                    // This is an ongoing journey with live tracking
+                    html += '<div class="tracking-card">';
+                    html += '<div class="tracking-header">Live Bus Tracking <span class="tracking-live">Live</span></div>';
+                    html += '<div class="tracking-content">';
+                    
+                    // Extract key details with regex
+                    const tripIdMatch = content.match(/Trip ID:\s*([^\n]+)/);
+                    const journeyMatch = content.match(/Journey from\s*([^\n]+)\s*to\s*([^\n]+)/);
+                    const locationMatch = content.match(/Current Location:\s*([^\n]+)/);
+                    const arrivalMatch = content.match(/Estimated Arrival:\s*([^\n]+)/) || content.match(/Estimated Arrival Time:\s*([^\n]+)/);
+                    const delayMatch = content.match(/Delay:\s*([^\n]+)/);
+                    
+                    if (journeyMatch) {
+                        html += `<div class="tracking-item">
+                            <div class="tracking-label">Journey:</div>
+                            <div class="tracking-value">${journeyMatch[1]} to ${journeyMatch[2]}</div>
+                        </div>`;
+                    }
+                    
+                    if (tripIdMatch) {
+                        html += `<div class="tracking-item">
+                            <div class="tracking-label">Trip ID:</div>
+                            <div class="tracking-value">${tripIdMatch[1]}</div>
+                        </div>`;
+                    }
+                    
+                    if (locationMatch) {
+                        html += `<div class="tracking-item">
+                            <div class="tracking-label">Current Location:</div>
+                            <div class="tracking-value">${locationMatch[1]}</div>
+                        </div>`;
+                    }
+                    
+                    if (arrivalMatch) {
+                        html += `<div class="tracking-item">
+                            <div class="tracking-label">Estimated Arrival:</div>
+                            <div class="tracking-value">${arrivalMatch[1]}</div>
+                        </div>`;
+                    }
+                    
+                    if (delayMatch) {
+                        html += `<div class="tracking-item">
+                            <div class="tracking-label">Delay:</div>
+                            <div class="tracking-value">${delayMatch[1]}</div>
+                        </div>`;
+                    }
+                    
+                    // Add button to refresh tracking
+                    if (tripIdMatch) {
+                        const tripId = tripIdMatch[1].trim();
+                        html += `<button class="refresh-tracking-btn" onclick="refreshTracking('${tripId}')">
+                            <i class="fas fa-sync-alt"></i> Refresh Tracking
+                        </button>`;
+                    }
+                    
+                    html += '</div>'; // close tracking-content
+                    html += '</div>'; // close tracking-card
+                } else if (content.includes('UPCOMING JOURNEY:')) {
+                    // This is a future journey
+                    html += '<div class="tracking-card">';
+                    html += '<div class="tracking-header">Journey Information <span class="tracking-upcoming">Upcoming</span></div>';
+                    html += '<div class="tracking-content">';
+                    
+                    // Extract key details
+                    const tripIdMatch = content.match(/Trip ID:\s*([^\n]+)/);
+                    const journeyMatch = content.match(/Journey from\s*([^\n]+)\s*to\s*([^\n]+)/);
+                    const dateMatch = content.match(/Date:\s*([^\n]+)/);
+                    
+                    if (journeyMatch) {
+                        html += `<div class="tracking-item">
+                            <div class="tracking-label">Journey:</div>
+                            <div class="tracking-value">${journeyMatch[1]} to ${journeyMatch[2]}</div>
+                        </div>`;
+                    }
+                    
+                    if (dateMatch) {
+                        html += `<div class="tracking-item">
+                            <div class="tracking-label">Date:</div>
+                            <div class="tracking-value">${dateMatch[1]}</div>
+                        </div>`;
+                    }
+                    
+                    if (tripIdMatch) {
+                        html += `<div class="tracking-item">
+                            <div class="tracking-label">Trip ID:</div>
+                            <div class="tracking-value">${tripIdMatch[1]}</div>
+                        </div>`;
+                    }
+                    
+                    html += `<div class="tracking-item">
+                        <div class="tracking-label">Status:</div>
+                        <div class="tracking-value">Tracking will be available 30 minutes before departure</div>
+                    </div>`;
+                    
+                    html += '</div>'; // close tracking-content
+                    html += '</div>'; // close tracking-card
+                } else if (content.includes('COMPLETED JOURNEY:')) {
+                    // This is a completed journey
+                    html += '<div class="tracking-card">';
+                    html += '<div class="tracking-header">Journey Information <span class="tracking-completed">Completed</span></div>';
+                    html += '<div class="tracking-content">';
+                    
+                    // Extract key details
+                    const tripIdMatch = content.match(/Trip ID:\s*([^\n]+)/);
+                    const journeyMatch = content.match(/Journey from\s*([^\n]+)\s*to\s*([^\n]+)/);
+                    const dateMatch = content.match(/Date:\s*([^\n]+)/);
+                    
+                    if (journeyMatch) {
+                        html += `<div class="tracking-item">
+                            <div class="tracking-label">Journey:</div>
+                            <div class="tracking-value">${journeyMatch[1]} to ${journeyMatch[2]}</div>
+                        </div>`;
+                    }
+                    
+                    if (dateMatch) {
+                        html += `<div class="tracking-item">
+                            <div class="tracking-label">Date:</div>
+                            <div class="tracking-value">${dateMatch[1]}</div>
+                        </div>`;
+                    }
+                    
+                    if (tripIdMatch) {
+                        html += `<div class="tracking-item">
+                            <div class="tracking-label">Trip ID:</div>
+                            <div class="tracking-value">${tripIdMatch[1]}</div>
+                        </div>`;
+                    }
+                    
+                    html += `<div class="tracking-item">
+                        <div class="tracking-label">Status:</div>
+                        <div class="tracking-value">Journey completed</div>
+                    </div>`;
+                    
+                    // Check for feedback information
+                    if (content.includes('FEEDBACK QUESTIONS:')) {
+                        html += `<div class="tracking-item">
+                            <div class="tracking-label">Feedback:</div>
+                            <div class="tracking-value">Please provide feedback on your journey through the Fresh Bus app</div>
+                        </div>`;
+                    }
+                    
+                    html += '</div>'; // close tracking-content
+                    html += '</div>'; // close tracking-card
+                } else if (content.includes('The trip has already ended')) {
+                    // Simple trip ended case
+                    html += '<div class="tracking-card">';
+                    html += '<div class="tracking-header">Journey Status <span class="tracking-completed">Completed</span></div>';
+                    html += '<div class="tracking-content">';
+                    
+                    const tripIdMatch = content.match(/Trip ID:\s*([^\n]+)/);
+                    
+                    if (tripIdMatch) {
+                        html += `<div class="tracking-item">
+                            <div class="tracking-label">Trip ID:</div>
+                            <div class="tracking-value">${tripIdMatch[1]}</div>
+                        </div>`;
+                    }
+                    
+                    html += `<div class="tracking-item">
+                        <div class="tracking-label">Status:</div>
+                        <div class="tracking-value">The trip has already ended. The bus has completed its journey.</div>
+                    </div>`;
+                    
+                    html += '</div>'; // close tracking-content
+                    html += '</div>'; // close tracking-card
+                } else {
+                    // Raw text output as fallback
+                    return content;
+                }
+                
+                // Add any remaining content
+                const lines = content.split('\n');
+                let inSpecialSection = false;
+                let remainingContent = '';
+                
+                for (const line of lines) {
+                    if (line.includes('JOURNEY:') || line.includes('Current Location:') || 
+                        line.includes('Trip ID:') || line.includes('FEEDBACK QUESTIONS:')) {
+                        inSpecialSection = true;
+                    } else if (line.trim() === '' && inSpecialSection) {
+                        inSpecialSection = false;
+                    } else if (!inSpecialSection && line.trim() !== '') {
+                        remainingContent += line + '<br>';
+                    }
+                }
+                
+                if (remainingContent) {
+                    html += '<p>' + remainingContent + '</p>';
+                }
+                
+                return html;
+            }
+            
+            // Parse bus info format to HTML cards
+            function parseBusInfoToHTML(content) {
+                // First check if the content contains our bus format
+                if (!content.includes('🚌')) {
+                    return content;
+                }
+                
+                // Separate the non-bus content from bus listings
+                const parts = content.split(/(?=>\s*\*🚌)/);
+                let result = '';
+                
+                // Add the intro text (if any)
+                if (parts[0] && !parts[0].includes('*🚌')) {
+                    result += parts[0].trim() + '<br><br>';
+                }
+                
+                // Process each bus listing
+                const busListings = parts.filter(part => part.includes('*🚌'));
+                
+                for (let i = 0; i < busListings.length; i++) {
+                    const busText = busListings[i];
+                    result += createBusCardHTML(busText, i+1);
+                }
+                
+                // Add conclusion if any (after the last bus listing)
+                if (content.split('*').length > 1) {
+                    const lastPart = content.split('*');
+                    const conclusionText = lastPart[lastPart.length - 1].trim();
+                    
+                    if (conclusionText && !conclusionText.includes('🚌')) {
+                        result += '<br>' + conclusionText;
+                    }
+                }
+                
+                return result;
+            }
+            
+            // Create bus card HTML from text
+            function createBusCardHTML(busText, index) {
+                // Extract data using regex
+                const timeRegex = /🚌\s*([\d:]+\s*[AP]M)\s*-\s*([\d:]+\s*[AP]M)\s*\|\s*([^|]+)\s*\|\s*([^*]+)/;
+                const priceRegex = /Price:\s*₹(\d+)\s*\|\s*(\d+)\s*seats\s*\|\s*Rating:\s*([\d.]+)\/5/;
+                const boardingRegex = /Boarding:\s*([^(]+)\s*\(([^)]+)\)/;
+                const boardingSimpleRegex = /Boarding:\s*([^\n]+)/;
+                const droppingRegex = /Dropping:\s*([^\n]+)/;
+                const reasonableRegex = /\*\*Reasonable\*\*:\s*Window\s*(\d+)\s*\(₹(\d+)\),\s*Aisle\s*(\d+)\s*\(₹(\d+)\)/;
+                const premiumRegex = /\*\*Premium\*\*:\s*Window\s*(\d+)\s*\(₹(\d+)\),\s*Aisle\s*(\d+)\s*\(₹(\d+)\)/;
+                const budgetRegex = /\*\*Budget-Friendly\*\*:\s*Window\s*(\d+)\s*\(₹(\d+)\),\s*Aisle\s*(\d+)\s*\(₹(\d+)\)/;
+                
+                const timeMatch = busText.match(timeRegex);
+                const priceMatch = busText.match(priceRegex);
+                const boardingMatch = busText.match(boardingRegex) || busText.match(boardingSimpleRegex);
+                const droppingMatch = busText.match(droppingRegex);
+                const reasonableMatch = busText.match(reasonableRegex);
+                const premiumMatch = busText.match(premiumRegex);
+                const budgetMatch = busText.match(budgetRegex);
+                
+                // Build HTML
+                let html = `<div class="bus-card" data-bus-index="${index}">`;
+                
+                // Verification badge
+                html += `<div class="verification-badge"><i class="fas fa-check-circle"></i> Verified</div>`;
+                
+                // Header
+                if (timeMatch) {
+                    html += `
+                        <div class="bus-header">
+                            <div class="bus-title">
+                                <span class="bus-emoji">🚌</span> ${timeMatch[1]} - ${timeMatch[2]} | ${timeMatch[3].trim()}
+                            </div>
+                            <div class="bus-duration">${timeMatch[4].trim()}</div>
+                        </div>
+                    `;
+                }
+                
+                // Info section
+                if (priceMatch) {
+                    html += `
+                        <div class="bus-info">
+                            <div class="info-item price">
+                                <i class="fas fa-tag"></i> ₹${priceMatch[1]}
+                            </div>
+                            <div class="info-item seats">
+                                <i class="fas fa-chair"></i> ${priceMatch[2]} seats
+                            </div>
+                            <div class="info-item rating">
+                                <i class="fas fa-star"></i> ${priceMatch[3]}/5
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // Boarding and dropping points
+                html += `<div class="bus-points">`;
+                
+                if (boardingMatch) {
+                    html += `
+                        <div class="boarding">
+                            <div class="point-label">
+                                <i class="fas fa-sign-in-alt"></i> Boarding
+                            </div>
+                            <div class="point-location">${boardingMatch[1].trim()}</div>`;
+                    
+                    // Add distance if available (from parentheses)
+                    if (boardingMatch.length > 2) {
+                        html += `<div class="distance">${boardingMatch[2].trim()}</div>`;
+                    }
+                    
+                    html += `</div>`;
+                }
+                
+                if (droppingMatch) {
+                    html += `
+                        <div class="dropping">
+                            <div class="point-label">
+                                <i class="fas fa-sign-out-alt"></i> Dropping
+                            </div>
+                            <div class="point-location">${droppingMatch[1].trim()}</div>
+                        </div>
+                    `;
+                }
+                
+                html += `</div>`;
+                
+                // Seat categories
+                html += `<div class="seat-categories">`;
+                
+                if (reasonableMatch) {
+                    html += `
+                        <div class="seat-category">
+                            <div class="category-title">Reasonable Seats</div>
+                            <div class="seat-options">
+                                <div class="seat-option">
+                                    <i class="fas fa-window-maximize"></i>
+                                    <span class="seat-number">Window ${reasonableMatch[1]}</span>
+                                    <span class="seat-price">(₹${reasonableMatch[2]})</span>
+                                </div>
+                                <div class="seat-option">
+                                    <i class="fas fa-chair"></i>
+                                    <span class="seat-number">Aisle ${reasonableMatch[3]}</span>
+                                    <span class="seat-price">(₹${reasonableMatch[4]})</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                if (premiumMatch) {
+                    html += `
+                        <div class="seat-category">
+                            <div class="category-title">Premium Seats</div>
+                            <div class="seat-options">
+                                <div class="seat-option">
+                                    <i class="fas fa-window-maximize"></i>
+                                    <span class="seat-number">Window ${premiumMatch[1]}</span>
+                                    <span class="seat-price">(₹${premiumMatch[2]})</span>
+                                </div>
+                                <div class="seat-option">
+                                    <i class="fas fa-chair"></i>
+                                    <span class="seat-number">Aisle ${premiumMatch[3]}</span>
+                                    <span class="seat-price">(₹${premiumMatch[4]})</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                if (budgetMatch) {
+                    html += `
+                        <div class="seat-category">
+                            <div class="category-title">Budget-Friendly Seats</div>
+                            <div class="seat-options">
+                                <div class="seat-option">
+                                    <i class="fas fa-window-maximize"></i>
+                                    <span class="seat-number">Window ${budgetMatch[1]}</span>
+                                    <span class="seat-price">(₹${budgetMatch[2]})</span>
+                                </div>
+                                <div class="seat-option">
+                                    <i class="fas fa-chair"></i>
+                                    <span class="seat-number">Aisle ${budgetMatch[3]}</span>
+                                    <span class="seat-price">(₹${budgetMatch[4]})</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                html += `</div>`;
+                
+                // Book button
+                html += `
+                    <button class="book-button" onclick="bookBus(${index})">
+                        <i class="fas fa-ticket-alt"></i> Book This Bus
+                    </button>
+                `;
+                
+                html += `</div>`;
+                
+                return html;
+            }
+            
+            // Initialize global booking function
+            window.bookBus = function(busIndex) {
+                const message = `I'd like to book bus number ${busIndex}`;
+                messageInput.value = message;
+                sendMessage();
+            };
+            
+            // Initialize global refresh tracking function
+            window.refreshTracking = function(tripId) {
+                const message = `Show me the latest tracking for trip ID ${tripId}`;
+                messageInput.value = message;
+                sendMessage();
+            };
+            
+            // Fetch ETA data for a specific trip ID
+            async function fetchEtaData(tripId) {
+                try {
+                    showLoading();
+                    
+                    const response = await fetch(`/eta-data/${tripId}`);
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    
+                    const etaData = await response.json();
+                    hideLoading();
+                    
+                    // Process and display the ETA data
+                    displayEtaData(tripId, etaData);
+                    
+                    return etaData;
+                } catch (error) {
+                    hideLoading();
+                    console.error('Error fetching ETA data:', error);
+                    showToast('Could not fetch bus location data', 'error');
+                    return null;
+                }
+            }
+
+            // Fetch user's tickets
+            async function fetchUserTickets() {
+                try {
+                    if (!authToken) {
+                        showToast('Please login to view your tickets', 'warning');
+                        return null;
+                    }
+                    
+                    showLoading();
+                    
+                    const response = await fetch('/user/tickets', {
+                        headers: {
+                            'Authorization': `Bearer ${authToken}`
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    
+                    const tickets = await response.json();
+                    hideLoading();
+                    
+                    return tickets;
+                } catch (error) {
+                    hideLoading();
+                    console.error('Error fetching tickets:', error);
+                    showToast('Could not fetch your tickets', 'error');
+                    return null;
+                }
+            }
+
+            // Fetch feedback questions for completed journeys
+            async function fetchFeedbackQuestions() {
+                try {
+                    if (!authToken) {
+                        showToast('Please login to view feedback', 'warning');
+                        return null;
+                    }
+                    
+                    showLoading();
+                    
+                    const response = await fetch('/tickets/feedbackQuestions', {
+                        headers: {
+                            'Authorization': `Bearer ${authToken}`
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    
+                    const feedback = await response.json();
+                    hideLoading();
+                    
+                    return feedback;
+                } catch (error) {
+                    hideLoading();
+                    console.error('Error fetching feedback questions:', error);
+                    showToast('Could not fetch feedback questions', 'error');
+                    return null;
+                }
+            }
+            
+            // Display ETA data in a nice format
+            function displayEtaData(tripId, etaData) {
+                let message = `Trip ID: ${tripId}\n`;
+                
+                if (etaData.message === "This trip has ended") {
+                    message += "This trip has already ended. The bus has completed its journey.";
+                } else if (etaData.message) {
+                    message += `Status: ${etaData.message}`;
+                } else {
+                    // Format proper ETA data
+                    if (etaData.currentLocation) {
+                        message += `Current Location: ${etaData.currentLocation}\n`;
+                    }
+                    
+                    if (etaData.estimatedArrival) {
+                        message += `Estimated Arrival Time: ${etaData.estimatedArrival}\n`;
+                    }
+                    
+                    if (etaData.delayMinutes) {
+                        message += `Delay: ${etaData.delayMinutes} minutes`;
+                    }
+                }
+                
+                addMessage(message, false);
+            }
+            
+            // Process a bus tracking request
+            async function processBusTrackingRequest(tripId) {
+                if (tripId) {
+                    // If trip ID is provided, fetch ETA data directly
+                    await fetchEtaData(tripId);
+                } else {
+                    // Otherwise, check if user has active tickets
+                    if (authToken) {
+                        const tickets = await fetchUserTickets();
+                        
+                        if (tickets && tickets.length > 0) {
+                            // Find active tickets (with upcoming or ongoing journeys)
+                            const now = new Date();
+                            const activeTickets = tickets.filter(ticket => {
+                                if (!ticket.journeyDate) return false;
+                                
+                                let journeyDate;
+                                try {
+                                    // Parse journey date
+                                    if (ticket.journeyDate.includes('T')) {
+                                        journeyDate = new Date(ticket.journeyDate);
+                                    } else {
+                                        journeyDate = new Date(`${ticket.journeyDate}T00:00:00`);
+                                    }
+                                    
+                                    // Check if journey is within 24 hours (past or future)
+                                    const timeDiff = Math.abs(journeyDate - now) / (1000 * 60 * 60);
+                                    return timeDiff < 24;
+                                } catch (e) {
+                                    console.error('Error parsing date:', e);
+                                    return false;
+                                }
+                            });
+                            
+                            if (activeTickets.length === 0) {
+                                addMessage("You don't have any active tickets for today. Please provide a Trip ID to track a specific bus.", false);
+                            } else if (activeTickets.length === 1) {
+                                // If there's only one active ticket, use its trip ID
+                                const ticket = activeTickets[0];
+                                addMessage(`Found an active ticket for your journey from ${ticket.source} to ${ticket.destination} on ${ticket.journeyDate}.`, false);
+                                
+                                if (ticket.tripId) {
+                                    await fetchEtaData(ticket.tripId);
+                                } else {
+                                    addMessage("Sorry, I couldn't find a Trip ID for this ticket.", false);
+                                }
+                            } else {
+                                // If there are multiple active tickets, list them
+                                let message = "You have multiple active tickets. Please select one to track:\n\n";
+                                
+                                activeTickets.forEach((ticket, index) => {
+                                    message += `${index + 1}. From ${ticket.source} to ${ticket.destination} on ${ticket.journeyDate}\n`;
+                                    if (ticket.tripId) {
+                                        message += `   Trip ID: ${ticket.tripId}\n`;
+                                    }
+                                });
+                                
+                                message += "\nPlease type the Trip ID you want to track.";
+                                addMessage(message, false);
+                            }
+                        } else {
+                            addMessage("You don't have any tickets. Please provide a Trip ID to track a specific bus.", false);
+                        }
+                    } else {
+                        addMessage("Please provide a Trip ID to track your bus or login to see your active tickets.", false);
+                    }
+                }
+            }
+            
+            // Check if a message is about bus tracking
+            function isBusTrackingQuery(query) {
+                const trackingPhrases = [
+                    "where is my bus", 
+                    "track my bus", 
+                    "bus location", 
+                    "track bus",
+                    "bus tracking", 
+                    "where is the bus", 
+                    "bus eta", 
+                    "arrival time",
+                    "when will bus arrive", 
+                    "trip id", 
+                    "tripid", 
+                    "trip status"
+                ];
+                
+                const lowerQuery = query.toLowerCase();
+                return trackingPhrases.some(phrase => lowerQuery.includes(phrase));
+            }
+
+            // Extract trip ID from a message
+            function extractTripId(query) {
+                const tripIdMatch = query.toLowerCase().match(/trip\s*id[\s:]*([\d]+)/);
+                if (tripIdMatch) {
+                    return tripIdMatch[1];
+                }
+                
+                // Also check for just a number that might be a trip ID
+                const justNumberMatch = query.match(/^[\s]*(\d{5,})[\s]*$/);
+                if (justNumberMatch) {
+                    return justNumberMatch[1];
+                }
+                
+                return null;
+            }
+            
+            // Send user message to API
+            async function sendUserQuery(query) {
+                if (isProcessing) return;
+                
+                isProcessing = true;
+                const timestamp = new Date().toISOString();
+                
+                // Check if this is a bus tracking request
+                const isBusTracking = isBusTrackingQuery(query);
+                const tripId = extractTripId(query);
+                
+                if (isBusTracking && tripId) {
+                    console.log("Bus tracking request with Trip ID detected");
+                    addMessage(query, true);
+                    
+                    // Handle bus tracking request with trip ID locally
+                    await fetchEtaData(tripId);
+                    isProcessing = false;
+                    return;
+                }
+                
+                try {
+                    // Prepare headers and request body
+                    const headers = {
+                        'Content-Type': 'application/json'
+                    };
+                    
+                    const requestBody = {
+                        query: query,
+                        session_id: sessionId,
+                        gender: selectedGender || null,
+                        stream: true
+                    };
+                    
+                    // Add location if available
+                    if (userLocation) {
+                        requestBody.location = userLocation;
+                    }
+                    
+                    // Add user auth details if available
+                    if (authToken) {
+                        // Create a more detailed user object with explicit profile fields
+                        const profileInfo = {
+                            token: authToken,
+                            user: {
+                                ...userDetails,
+                                name: userDetails.name || null,
+                                email: userDetails.email || null,
+                                mobile: userDetails.mobile || null,
+                                gender: userDetails.gender || null,
+                                age: userDetails.age || null,
+                                address: userDetails.address || null,
+                                availableCoins: userDetails.availableCoins || 0,
+                                // Include any other fields from the profile
+                            }
+                        };
+                        
+                        requestBody.auth = profileInfo;
+                        // Log the profile data we're sending
+                        console.log("Sending profile data:", profileInfo);
+                    }
+                    
+                    showLoading();
+                    
+                    // Send request to backend
+                    const response = await fetch('/query', {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify(requestBody)
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    // Process server-sent events
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+                    let responseText = '';
+                    
+                    hideLoading();
+                    
+                    const placeholder = addMessage('', false);
+                    
+                    while (true) {
+                        const { value, done } = await reader.read();
+                        
+                        if (done) {
+                            break;
+                        }
+                        
+                        buffer += decoder.decode(value, { stream: true });
+                        
+                        // Process complete SSE events
+                        while (buffer.includes('\n\n')) {
+                            const eventEnd = buffer.indexOf('\n\n');
+                            const eventData = buffer.substring(0, eventEnd);
+                            buffer = buffer.substring(eventEnd + 2);
+                            
+                            // Parse event data
+                            if (eventData.startsWith('data: ')) {
+                                try {
+                                    const jsonData = JSON.parse(eventData.substring(6));
+                                    
+                                    if (jsonData.done) {
+                                        // Update session ID if provided
+                                        if (jsonData.session_id) {
+                                            sessionId = jsonData.session_id;
+                                            localStorage.setItem('sessionId', sessionId);
+                                        }
+                                    } else if (jsonData.replace) {
+                                        // Replace the entire response with the corrected version
+                                        responseText = jsonData.text;
+                                        
+                                        // Update the placeholder with parsed content
+                                        if (responseText.includes('🚌')) {
+                                            placeholder.querySelector('.ai-message-text').innerHTML = parseBusInfoToHTML(responseText);
+                                        } else if (responseText.includes('Trip ID:') && (responseText.includes('Current Location:') || responseText.includes('journey'))) {
+                                            placeholder.querySelector('.ai-message-text').innerHTML = parseTrackingInfoToHTML(responseText);
+                                        } else {
+                                            placeholder.querySelector('.ai-message-text').textContent = responseText;
+                                        }
+                                        
+                                        messageContainer.scrollTop = messageContainer.scrollHeight;
+                                    } else {
+                                        responseText += jsonData.text;
+                                        
+                                        // Update the placeholder message with parsed content
+                                        if (responseText.includes('🚌')) {
+                                            placeholder.querySelector('.ai-message-text').innerHTML = parseBusInfoToHTML(responseText);
+                                        } else if (responseText.includes('Trip ID:') && (responseText.includes('Current Location:') || responseText.includes('journey'))) {
+                                            placeholder.querySelector('.ai-message-text').innerHTML = parseTrackingInfoToHTML(responseText);
+                                        } else {
+                                            placeholder.querySelector('.ai-message-text').textContent = responseText;
+                                        }
+                                        
+                                        messageContainer.scrollTop = messageContainer.scrollHeight;
+                                    }
+                                } catch (e) {
+                                    console.error('Error parsing SSE data:', e);
+                                }
+                            }
+                        }
+                    }
+                    
+                } catch (error) {
+                    console.error('Error sending query:', error);
+                    hideLoading();
+                    addMessage('Sorry, I encountered an error while processing your request. Please try again.', false);
+                    showToast('Error processing your request', 'error');
+                } finally {
+                    isProcessing = false;
+                }
+            }
+            
+            // Voice input functions
+            function startRecording() {
+                if (isRecording) return;
+                
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    showToast('Voice input is not supported in your browser', 'error');
+                    return;
+                }
+                
+                navigator.mediaDevices.getUserMedia({ audio: true })
+                    .then(stream => {
+                        audioChunks = [];
+                        mediaRecorder = new MediaRecorder(stream);
+                        
+                        mediaRecorder.addEventListener('dataavailable', event => {
+                            audioChunks.push(event.data);
+                        });
+                        
+                        mediaRecorder.addEventListener('stop', () => {
+                            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                            sendAudioToServer(audioBlob);
+                            
+                            // Stop all tracks of the stream to release the microphone
+                            stream.getTracks().forEach(track => track.stop());
+                        });
+                        
+                        mediaRecorder.start();
+                        isRecording = true;
+                        voiceButton.classList.add('recording');
+                        showToast('Recording... Click the microphone again to stop', 'info');
+                    })
+                    .catch(error => {
+                        console.error('Error accessing microphone:', error);
+                        showToast('Could not access your microphone', 'error');
+                    });
+            }
+            
+            function stopRecording() {
+                if (!isRecording || !mediaRecorder) return;
+                
+                mediaRecorder.stop();
+                isRecording = false;
+                voiceButton.classList.remove('recording');
+                showToast('Processing your voice...', 'info');
+            }
+            
+            async function sendAudioToServer(audioBlob) {
+                try {
+                    const formData = new FormData();
+                    formData.append('audio', audioBlob);
+                    
+                    showLoading();
+                    
+                    const response = await fetch('/speech-to-text', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    hideLoading();
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    
+                    if (data.success && data.text) {
+                        messageInput.value = data.text;
+                        addMessage(data.text, true);
+                        sendUserQuery(data.text);
+                    } else {
+                        showToast('Could not transcribe audio', 'warning');
+                    }
+                } catch (error) {
+                    console.error('Error sending audio:', error);
+                    hideLoading();
+                    showToast('Error processing audio', 'error');
+                }
+            }
+            
+            // Load conversation history
+            async function loadConversationHistory() {
+                try {
+                    historyContent.innerHTML = `
+                        <div class="loading-indicator">
+                            <div class="typing-indicator">
+                                <div class="typing-dot"></div>
+                                <div class="typing-dot"></div>
+                                <div class="typing-dot"></div>
+                            </div>
+                        </div>
+                    `;
+                    
+                    // Get history from API
+                    const response = await fetch(`/conversations?session_id=${sessionId}`);
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    const conversations = await response.json();
+                    
+                    if (conversations.length === 0) {
+                        historyContent.innerHTML = '<div class="conversation-item">No conversations found</div>';
+                        return;
+                    }
+                    
+                    // Build history content
+                    let historyHTML = '';
+                    
+                    for (const conversation of conversations) {
+                        const date = new Date(conversation.timestamp);
+                        const formattedDate = `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+                        
+                        historyHTML += `
+                            <div class="conversation-item" data-id="${conversation.conversation_id}">
+                                <div class="conversation-query">${conversation.user_query}</div>
+                                <div class="conversation-date">${formattedDate}</div>
+                            </div>
+                        `;
+                    }
+                    
+                    historyContent.innerHTML = historyHTML;
+                    
+                    // Add event listeners to history items
+                    document.querySelectorAll('.conversation-item').forEach(item => {
+                        item.addEventListener('click', () => {
+                            const conversationId = item.dataset.id;
+                            loadConversation(conversationId);
+                        });
+                    });
+                    
+                } catch (error) {
+                    console.error('Error loading history:', error);
+                    historyContent.innerHTML = '<div class="error-message">Failed to load conversation history</div>';
+                }
+            }
+            
+            // Load specific conversation
+            async function loadConversation(conversationId) {
+                try {
+                    historyPanel.classList.remove('active');
+                    
+                    const response = await fetch(`/conversations/${conversationId}`);
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    const conversation = await response.json();
+                    
+                    // Clear current messages
+                    messageContainer.innerHTML = '';
+                    
+                    // Add messages from conversation
+                    for (const message of conversation.messages) {
+                        if (message.role === 'user') {
+                            addMessage(message.content, true);
+                        } else if (message.role === 'assistant') {
+                            addMessage(message.content, false);
+                        }
+                    }
+                    
+                    showToast('Conversation loaded', 'success');
+                    
+                } catch (error) {
+                    console.error('Error loading conversation:', error);
+                    addMessage('Failed to load the selected conversation.', false);
+                    showToast('Failed to load conversation', 'error');
+                }
+            }
+            
+            // Clear session
+            async function clearChatSession() {
+                try {
+                    const response = await fetch(`/clear-session?session_id=${sessionId}`);
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    // Reset UI
+                    messageContainer.innerHTML = '';
+                    addMessage('Hello! I\'m your Fresh Bus travel assistant. I can help you find buses, check availability, and book tickets. How can I assist you today?', false);
+                    
+                    // Clear session ID
+                    sessionId = null;
+                    localStorage.removeItem('sessionId');
+                    
+                    showToast('Session cleared', 'success');
+                    
+                } catch (error) {
+                    console.error('Error clearing session:', error);
+                    addMessage('Failed to clear the session. Please try again.', false);
+                    showToast('Failed to clear session', 'error');
+                }
+            }
+            
+            // Send message function
+            function sendMessage() {
+                const message = messageInput.value.trim();
+                if (message && !isProcessing) {
+                    addMessage(message, true);
+                    sendUserQuery(message);
+                    messageInput.value = '';
+                }
+            }
+            
+            // -----------------------------
+            // Authentication Functions
+            // -----------------------------
+            
+            // Show login modal
+            function showLoginModal() {
+                // Reset the form fields
+                mobileForm.reset();
+                otpForm.reset();
+                
+                // Show mobile entry step and hide OTP entry step
+                mobileEntryStep.style.display = 'block';
+                otpEntryStep.style.display = 'none';
+                
+                // Show the modal
+                loginModal.style.display = 'flex';
+            }
+            
+            // Hide login modal
+            function hideLoginModal() {
+                loginModal.style.display = 'none';
+                
+                // Clear any timers
+                if (timerInterval) {
+                    clearInterval(timerInterval);
+                    timerInterval = null;
+                }
+            }
+            
+            // Start OTP countdown timer
+            function startOtpTimer() {
+                // Reset timer
+                timerSeconds = 30;
+                otpTimer.textContent = `Resend OTP in ${timerSeconds}s`;
+                resendOtp.style.visibility = 'hidden';
+                
+                // Clear any existing interval
+                if (timerInterval) {
+                    clearInterval(timerInterval);
+                }
+                
+                // Start timer
+                timerInterval = setInterval(() => {
+                    timerSeconds--;
+                    otpTimer.textContent = `Resend OTP in ${timerSeconds}s`;
+                    
+                    if (timerSeconds <= 0) {
+                        clearInterval(timerInterval);
+                        timerInterval = null;
+                        otpTimer.textContent = 'OTP expired';
+                        resendOtp.style.visibility = 'visible';
+                    }
+                }, 1000);
+            }
+            
+            // Send OTP to mobile number
+            async function sendOtpToMobile(mobile) {
+                try {
+                    const response = await fetch('/auth/sendotp', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ mobile })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (!response.ok) {
+                        throw new Error(data.message || 'Failed to send OTP');
+                    }
+                    
+                    // Show OTP entry step and hide mobile entry step
+                    currentMobile = mobile;
+                    displayMobile.textContent = mobile;
+                    mobileEntryStep.style.display = 'none';
+                    otpEntryStep.style.display = 'block';
+                    
+                    // Start timer
+                    startOtpTimer();
+                    
+                    // Focus on first OTP input
+                    otpInputs[0].focus();
+                    
+                    showToast('OTP sent successfully', 'success');
+                    
+                } catch (error) {
+                    console.error('Error sending OTP:', error);
+                    showToast(error.message || 'Failed to send OTP', 'error');
+                }
+            }
+            
+            // Verify OTP
+            async function verifyOtp(mobile, otp) {
+                try {
+                    const response = await fetch('/auth/verifyotp', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ 
+                            mobile,
+                            otp,
+                            deviceId
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (!response.ok) {
+                        throw new Error(data.message || 'Failed to verify OTP');
+                    }
+                    
+                    // Save auth tokens
+                    authToken = data.access_token;
+                    refreshToken = data.refresh_token;
+                    userDetails = data.user || { mobile };
+                    
+                    // Save to localStorage
+                    localStorage.setItem('authToken', authToken);
+                    localStorage.setItem('refreshToken', refreshToken);
+                    localStorage.setItem('userDetails', JSON.stringify(userDetails));
+                    
+                    // Update UI
+                    updateLoginButton();
+                    
+                    // Hide modal
+                    hideLoginModal();
+                    
+                    showToast('Login successful!', 'success');
+                    
+                    // Fetch complete profile data
+                    const profileData = await fetchUserProfile();
+                    
+                    // Greet the user with complete profile info if available
+                    const name = profileData?.name || userDetails.name || "there";
+                    addMessage(`Hello ${name}! How can I assist you with your travel plans today?`, false);
+                    
+                } catch (error) {
+                    console.error('Error verifying OTP:', error);
+                    showToast(error.message || 'Failed to verify OTP', 'error');
+                }
+            }
+            
+            // Handle OTP input fields
+            function setupOtpInputs() {
+                otpInputs.forEach((input, index) => {
+                    // Auto-focus next input when a digit is entered
+                    input.addEventListener('input', (e) => {
+                        if (e.target.value.length === 1) {
+                            if (index < otpInputs.length - 1) {
+                                otpInputs[index + 1].focus();
+                            } else {
+                                input.blur(); // Remove focus if it's the last input
+                            }
+                        }
+                    });
+                    
+                    // Handle backspace
+                    input.addEventListener('keydown', (e) => {
+                        if (e.key === 'Backspace' && !e.target.value && index > 0) {
+                            otpInputs[index - 1].focus();
+                        }
+                    });
+                    
+                    // Allow only numbers
+                    input.addEventListener('keypress', (e) => {
+                        if (!/[0-9]/.test(e.key)) {
+                            e.preventDefault();
+                        }
+                    });
+                    
+                    // Handle paste event
+                    input.addEventListener('paste', (e) => {
+                        e.preventDefault();
+                        const pasteData = e.clipboardData.getData('text');
+                        const digits = pasteData.match(/\d/g);
+                        
+                        if (digits && digits.length > 0) {
+                            digits.slice(0, otpInputs.length).forEach((digit, i) => {
+                                otpInputs[i].value = digit;
+                                if (i === digits.length - 1 || i === otpInputs.length - 1) {
+                                    otpInputs[i].blur();
+                                }
+                            });
+                        }
+                    });
+                });
+            }
+            
+            // Get OTP value from inputs
+            function getOtpValue() {
+                return Array.from(otpInputs).map(input => input.value).join('');
+            }
+            
+            // Logout function
+            function logout() {
+                // Clear auth tokens
+                authToken = null;
+                refreshToken = null;
+                userDetails = {};
+                
+                // Remove from localStorage
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('refreshToken');
+                localStorage.removeItem('userDetails');
+                
+                // Update UI
+                updateLoginButton();
+                
+                showToast('Logged out successfully', 'success');
+            }
+            
+            // Event listeners
+            sendButton.addEventListener('click', sendMessage);
+            
+            messageInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            
+            clearButton.addEventListener('click', clearChatSession);
+            
+            locationButton.addEventListener('click', function() {
+                locationButton.innerHTML = '<i class="fas fa-sync fa-spin"></i> Updating...';
+                getUserLocation();
+            });
+            
+            historyButton.addEventListener('click', function() {
+                historyPanel.classList.add('active');
+                loadConversationHistory();
+            });
+            
+            closeHistory.addEventListener('click', function() {
+                historyPanel.classList.remove('active');
+            });
+            
+            maleOption.addEventListener('click', function() {
+                maleOption.classList.add('selected');
+                femaleOption.classList.remove('selected');
+                selectedGender = 'male';
+                localStorage.setItem('selectedGender', selectedGender);
+                showToast('Gender preference updated', 'info');
+            });
+            
+            femaleOption.addEventListener('click', function() {
+                femaleOption.classList.add('selected');
+                maleOption.classList.remove('selected');
+                selectedGender = 'female';
+                localStorage.setItem('selectedGender', selectedGender);
+                showToast('Gender preference updated', 'info');
+            });
+            
+            voiceButton.addEventListener('click', function() {
+                if (isRecording) {
+                    stopRecording();
+                } else {
+                    startRecording();
+                }
+            });
+            
+            // Login modal event listeners
+            loginButton.addEventListener('click', function() {
+                if (loginButton.classList.contains('logged-in')) {
+                    // Show logout confirmation
+                    if (confirm('Are you sure you want to log out?')) {
+                        logout();
+                    }
+                } else {
+                    showLoginModal();
+                }
+            });
+            
+            closeLoginModal.addEventListener('click', hideLoginModal);
+            
+            // Click outside modal to close
+            loginModal.addEventListener('click', function(e) {
+                if (e.target === loginModal) {
+                    hideLoginModal();
+                }
+            });
+            
+            // Send OTP form submit
+            mobileForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const mobile = mobileNumberInput.value.trim();
+                
+                if (mobile.length !== 10 || !/^\d+$/.test(mobile)) {
+                    showToast('Please enter a valid 10-digit mobile number', 'warning');
+                    return;
+                }
+                
+                sendOtpToMobile(mobile);
+            });
+            
+            // Verify OTP form submit
+            otpForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const otp = getOtpValue();
+                
+                if (otp.length !== 6 || !/^\d+$/.test(otp)) {
+                    showToast('Please enter a valid 6-digit OTP', 'warning');
+                    return;
+                }
+                
+                verifyOtp(currentMobile, otp);
+            });
+            
+            // Resend OTP
+            resendOtp.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                if (currentMobile) {
+                    sendOtpToMobile(currentMobile);
+                } else {
+                    hideLoginModal();
+                    showToast('Please try again', 'error');
+                }
+            });
+            
+            // Setup OTP inputs
+            setupOtpInputs();
+        });
+    </script>
+    <!-- Font Awesome for icons -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/js/all.min.js"></script>
+</body>
+</html>
