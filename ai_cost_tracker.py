@@ -145,10 +145,7 @@ class AICostTracker:
             model_data["total_tokens"] += entry["total_tokens"]
             model_data["total_cost"] += entry["total_cost"]
         
-        return summaryimport json
-import time
-import os
-from datetime import datetime, date
+        return summary
 from typing import Dict, Any, List, Optional
 
 class AICostTracker:

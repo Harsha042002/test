@@ -314,10 +314,7 @@ class AIProviderFactory:
                 "models": provider_models
             })
         
-        return providersimport os
-import json
-import asyncio
-import aiohttp
+        return providers
 import time
 from typing import Dict, List, Any, Optional, AsyncGenerator
 from abc import ABC, abstractmethod
