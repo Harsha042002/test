@@ -23,8 +23,11 @@ import chromadb
 import tiktoken
 import atexit
 
-load_dotenv()
+# Import the custom AI provider modules
+from ai_providers import AIProviderFactory, AIProvider
+from ai_cost_tracker import AICostTracker
 
+load_dotenv()
 
 # Updated Redis configuration using Upstash
 REDIS_HOST = 'tops-buffalo-19522.upstash.io'
@@ -43,6 +46,7 @@ redis_client = redis.Redis(
 async def lifespan(app: FastAPI):
     await fresh_bus_assistant.init_http_session()
     await fresh_bus_assistant.init_system_prompt()
+    print(f"Using AI provider: {fresh_bus_assistant.ai_provider.provider_name} - Model: {fresh_bus_assistant.ai_provider.model}")
     yield
     await fresh_bus_assistant.cleanup()
 
@@ -62,9 +66,16 @@ class QueryRequest(BaseModel):
     stream: Optional[bool] = True
     gender: Optional[str] = None
     location: Optional[Dict[str, float]] = None
+    provider: Optional[str] = None  # Added for model selection
+    model: Optional[str] = None     # Added for model selection
+    silent: Optional[bool] = False  # Added for silent model switching
 
 class InitializeRequest(BaseModel):
     system_prompt_path: str = "./system_prompt/qa_prompt.txt"
+
+class ModelSelectionRequest(BaseModel):
+    provider: str
+    model: str
 
 # Response models
 class ConversationSummary(BaseModel):
@@ -87,7 +98,11 @@ LANGUAGE_CODES = {
     "telugu": "te",
     "kannada": "kn",
     "tamil": "ta",
-    "malayalam": "ml"
+    "malayalam": "ml",
+    "tenglish": "te",
+    "hinglish": "hi",
+    "tanglish": "ta",
+    "kanglish": "kn"
 }
 LANGUAGE_CODES_REVERSE = {v: k for k, v in LANGUAGE_CODES.items()}
 
@@ -285,8 +300,6 @@ class VectorDBManager:
         self.embeddings_client = embeddings_client
         self.collection_cache = {}
     
-
-    
     async def get_or_create_collection(self, collection_name):
         if collection_name in self.collection_cache:
             return self.collection_cache[collection_name]
@@ -401,20 +414,45 @@ class VectorDBManager:
         await self.add_texts(collection_name, texts, metadatas, ids)
     
     async def get_system_prompt(self, query, collection_name="system_prompts"):
+        query_lower = query.lower()
+        
+        # Check for simple queries to prioritize identity and greeting info
+        if query_lower in ["hi", "hello", "hey"] or "name" in query_lower or "who" in query_lower:
+            # First look for assistant identity sections
+            identity_results = await self.query_collection(
+                collection_name, 
+                "assistant identity name", 
+                n_results=2
+            )
+            
+            # If we have identity results, prioritize them
+            if identity_results and identity_results.get("documents"):
+                docs = identity_results.get("documents")
+                if isinstance(docs[0], list):
+                    docs = [doc for sublist in docs for doc in sublist]
+                
+                # Add standard prompt elements
+                standard_prompt = "You are a Fresh Bus travel assistant. Provide accurate bus information based on API data only."
+                return standard_prompt + "\n\n" + "\n\n".join(docs)
+        
+        # Regular query processing
         results = await self.query_collection(collection_name, query, n_results=5)
         if not results or not results["documents"]:
             return "You are a Fresh Bus travel assistant. Provide accurate bus information based on API data only."
+            
         prompt_sections = []
         documents = results["documents"]
         if documents and isinstance(documents[0], list):
             documents = [doc for sublist in documents for doc in sublist]
         elif documents and not isinstance(documents[0], str):
             documents = [str(doc) for doc in documents]
+            
         for doc in documents:
             if isinstance(doc, str):
                 prompt_sections.append(doc)
             else:
                 prompt_sections.append(str(doc))
+                
         return "\n\n".join(prompt_sections)
     
     async def _store_active_tickets(self, collection_name, tickets):
@@ -477,6 +515,68 @@ class VectorDBManager:
             await self._store_seat_recommendations(collection_name, api_data["recommendations"])
         if api_data.get("user_profile"):
             await self._store_user_profile(collection_name, api_data["user_profile"])
+        if api_data.get("tracking"):
+            await self._store_tracking_data(collection_name, api_data["tracking"])
+        
+    async def _store_tracking_data(self, collection_name, tracking_data):
+        """Store tracking data in vector database"""
+        if not tracking_data:
+            return
+            
+        tracking_type = tracking_data.get("type", "unknown")
+        
+        if tracking_type == "active_ticket":
+            tracking_text = "BUS TRACKING INFORMATION (ACTIVE TICKET):\n"
+            tracking_text += f"• Trip ID: {tracking_data.get('tripId', 'Unknown')}\n"
+            tracking_text += f"• Journey: {tracking_data.get('from', 'Unknown')} to {tracking_data.get('to', 'Unknown')}\n"
+            tracking_text += f"• Journey Date: {tracking_data.get('journeyDate', 'Unknown')}\n\n"
+            
+            # Add ETA data if available
+            eta_data = tracking_data.get("eta", {})
+            if eta_data:
+                if "message" in eta_data:
+                    tracking_text += f"• Status: {eta_data['message']}\n"
+                else:
+                    if "currentLocation" in eta_data:
+                        tracking_text += f"• Current Bus Location: {eta_data['currentLocation']}\n"
+                    if "estimatedArrival" in eta_data:
+                        tracking_text += f"• Estimated Arrival: {eta_data['estimatedArrival']}\n"
+                    if "delayMinutes" in eta_data:
+                        tracking_text += f"• Delay: {eta_data['delayMinutes']} minutes\n"
+            
+        elif tracking_type == "completed_ticket":
+            tracking_text = "BUS TRACKING INFORMATION (COMPLETED JOURNEY):\n"
+            tracking_text += f"• Trip ID: {tracking_data.get('tripId', 'Unknown')}\n"
+            tracking_text += f"• Completed Journey: {tracking_data.get('from', 'Unknown')} to {tracking_data.get('to', 'Unknown')}\n"
+            tracking_text += f"• Journey Date: {tracking_data.get('journeyDate', 'Unknown')}\n"
+            tracking_text += "• Status: This journey has been completed.\n\n"
+            
+            # Add NPS data if available
+            nps_data = tracking_data.get("nps", {})
+            if nps_data and nps_data.get("status") == "available" and nps_data.get("questions"):
+                tracking_text += "FEEDBACK REQUESTED:\n"
+                for i, question in enumerate(nps_data["questions"]):
+                    if "questionText" in question:
+                        tracking_text += f"• Question {i+1}: {question['questionText']}\n"
+                        
+        elif tracking_type == "future_ticket":
+            tracking_text = "BUS TRACKING INFORMATION (FUTURE JOURNEY):\n"
+            tracking_text += f"• Trip ID: {tracking_data.get('tripId', 'Unknown')}\n"
+            tracking_text += f"• Future Journey: {tracking_data.get('from', 'Unknown')} to {tracking_data.get('to', 'Unknown')}\n"
+            tracking_text += f"• Journey Date: {tracking_data.get('journeyDate', 'Unknown')}\n"
+            tracking_text += "• Status: This journey is scheduled for the future. Tracking will be available closer to departure time.\n"
+            
+        else:
+            tracking_text = f"BUS TRACKING INFORMATION ({tracking_type.upper()}):\n"
+            tracking_text += f"• Message: {tracking_data.get('message', 'No tracking data available')}\n"
+        
+        # Store the tracking information in vector database
+        await self.add_texts(
+            collection_name,
+            [tracking_text],
+            [{"type": "tracking_data", "tracking_type": tracking_type}],
+            [f"tracking_data_{tracking_type}_{collection_name}"]
+        )
     
     async def _store_trips(self, collection_name, trips_data, user_direction=None):
         texts = []
@@ -752,8 +852,6 @@ class VectorDBManager:
     def get_token_count(self, text):
         return len(tokenizer.encode(text))
 
-    
-
 
 #################################
 # FreshBusAssistant Class
@@ -763,6 +861,7 @@ class FreshBusAssistant:
         self.system_prompt = ""
         self.load_system_prompt("./system_prompt/qa_prompt.txt")
         self.BASE_URL = "https://api-stage.freshbus.com"
+        self.BASE_URL_CUSTOMER = os.getenv("BASE_URL_CUSTOMER", "https://api-stage.freshbus.com")
         self.stations = {
             "hyderabad": 3,
             "vijayawada": 5,
@@ -784,6 +883,41 @@ class FreshBusAssistant:
         self.embeddings_client = VoyageEmbeddings(voyage_api_key)
         self.vector_db = VectorDBManager(self.embeddings_client)
         self.system_prompt_initialized = False
+        
+        # Cache for user tickets
+        self.user_tickets_cache = {}
+        self.user_tickets_cache_expiry = {}
+        
+        # Initialize AI provider - default to Gemini with improved error handling
+        provider_name = os.getenv("AI_PROVIDER", "gemini")  # Default to Gemini
+        provider_model = os.getenv("AI_PROVIDER_MODEL", "gemini-2.0-flash")  # Default to Gemini Flash
+        
+        # Clean up provider name by removing any comments and whitespace
+        if '#' in provider_name:
+            provider_name = provider_name.split('#')[0].strip()
+            print(f"WARNING: Cleaned up provider name to: {provider_name}")
+        
+        # Ensure provider name is valid
+        valid_providers = ["gemini", "claude"]
+        if provider_name.lower() not in valid_providers:
+            print(f"WARNING: Unknown provider '{provider_name}', falling back to 'gemini'")
+            provider_name = "gemini"
+            
+        try:
+            self.ai_provider = AIProviderFactory.create_provider(
+                provider_name=provider_name,
+                model=provider_model
+            )
+        except ValueError as e:
+            print(f"Error initializing provider {provider_name}: {e}")
+            print("Falling back to Gemini provider")
+            self.ai_provider = AIProviderFactory.create_provider(
+                provider_name="gemini",
+                model="gemini-2.0-flash"
+            )
+        
+        # Initialize cost tracker
+        self.cost_tracker = AICostTracker()
 
     def load_system_prompt(self, path):
         try:
@@ -796,10 +930,67 @@ class FreshBusAssistant:
     
     async def init_system_prompt(self):
         if not self.system_prompt_initialized:
+            # Add additional assistant identity and capabilities information
+            identity_info = """
+            
+            ASSISTANT IDENTITY:
+            - Your name is Ṧ.AI (pronounced 'Sai')
+            - You are the Fresh Bus AI travel assistant
+            - When asked about your name or identity, always identify yourself as Ṧ.AI
+            - When asked simple greeting questions like "hi", "hello", respond with a friendly greeting
+            
+            LANGUAGE CAPABILITIES:
+            - You can respond fluently in multiple Indian languages including Telugu, Hindi, Tamil, Kannada, and Malayalam
+            - When a user asks a question in one of these languages, respond in the same language
+            - For transliteration requests, you can convert between scripts while maintaining the same language (e.g., Telugu written in Latin script or 'Tenglish')
+            - Never claim you cannot speak or understand these languages
+            
+            HANDLING NON-BUS QUERIES:
+            - For general questions not related to bus booking, provide brief, helpful responses
+            - For identity questions like "what's your name", always state that you are Ṧ.AI
+            - For greetings like "hi", "hello", respond with a friendly greeting
+            - Only direct users back to bus-related topics for completely off-topic conversations
+            
+            OUTPUT FORMAT FOR BUS LISTINGS:
+            When providing bus information, use this JSON format inside triple backticks:
+            ```json
+            {
+            "trips": [
+                {
+                "busNumber": "123",
+                "price": "499",
+                "seats": "84",
+                "rating": "4.6",
+                "from": "Hyderabad",
+                "to": "Guntur",
+                "boardingPoint": "L B Nagar Metro Station",
+                "droppingPoint": "NTR CIRCLE RTC Bus Stand",
+                "departureTime": "10:00 PM",
+                "arrivalTime": "5:30 AM",
+                "duration": "7h 30m",
+                "tripId": "12345",
+                "busType": "AC Sleeper",
+                "recommendations": {
+                    "reasonable": {
+                    "window": {"seatNumber": "1", "price": "449"},
+                    "aisle": {"seatNumber": "2", "price": "449"}
+                    }
+                }
+                }
+            ]
+            }
+            ```
+            
+            When the user wants this information in another language, first provide the JSON, then translate it to the requested language.
+            """
+            
+            self.system_prompt += identity_info
+            
+            # Initialize VectorDB with the enhanced system prompt
             await self.embeddings_client.init_session()
             await self.vector_db.store_system_prompt(self.system_prompt)
             self.system_prompt_initialized = True
-            print("System prompt stored in vector DB")
+            print("Enhanced system prompt stored in vector DB")
     
     async def init_http_session(self):
         if self.http_session is None:
@@ -807,12 +998,73 @@ class FreshBusAssistant:
             self.http_session = aiohttp.ClientSession(timeout=timeout)
             print("HTTP session initialized with timeout settings")
             await self.embeddings_client.init_session()
+            
+            # Initialize AI provider
+            await self.ai_provider.initialize()
+            print(f"Initialized {self.ai_provider.provider_name} AI provider with model {self.ai_provider.model}")
     
     async def cleanup(self):
         if self.http_session:
             await self.http_session.close()
             print("HTTP session closed")
         await self.embeddings_client.close_session()
+        await self.ai_provider.cleanup()
+        print(f"Cleaned up {self.ai_provider.provider_name} AI provider")
+    
+    # Improved language detection
+    def detect_language(self, text):
+        """Detect language of user input with expanded support for Indian languages"""
+        # Check for Telugu script
+        if re.search(r'[\u0C00-\u0C7F]', text):
+            return "telugu"
+        
+        # Check for Hindi script
+        if re.search(r'[\u0900-\u097F]', text):
+            return "hindi"
+        
+        # Check for Tamil script
+        if re.search(r'[\u0B80-\u0BFF]', text):
+            return "tamil"
+        
+        # Check for Kannada script
+        if re.search(r'[\u0C80-\u0CFF]', text):
+            return "kannada"
+        
+        # Check for Malayalam script
+        if re.search(r'[\u0D00-\u0D7F]', text):
+            return "malayalam"
+        
+        # Check for transliterated Telugu (Tenglish)
+        tenglish_words = ["meeku", "naaku", "undi", "ledu", "kavalante", "cheyandi", 
+                        "telugu", "nenu", "nenu", "miru", "meeru", "enti", "ala", "ela", 
+                        "ooru", "peru", "vastunnanu", "vastunna", "vachanu"]
+        
+        if any(word in text.lower() for word in tenglish_words):
+            return "tenglish"
+        
+        # Check for transliterated Hindi (Hinglish)
+        hinglish_words = ["kya", "hai", "nahi", "aap", "karenge", "chahiye", "dijiye", 
+                        "kaise", "kyun", "mujhe", "tumhe", "hum", "tum", "kaun"]
+        
+        if any(word in text.lower() for word in hinglish_words):
+            return "hinglish"
+        
+        # Default to English
+        return "english"
+    
+    # Method to detect bus tracking queries
+    def is_bus_tracking_query(self, query):
+        """Detect if a query is asking about bus tracking or ETA"""
+        tracking_phrases = [
+            "where is my bus", "track my bus", "bus location", "track bus",
+            "bus tracking", "where is the bus", "bus eta", "arrival time",
+            "when will bus arrive", "trip id", "tripid", "trip status",
+            "bus status", "bus position", "live tracking", "live location",
+            "bus reached", "bus arrived", "bus coming", "ticket status"
+        ]
+        
+        query_lower = query.lower()
+        return any(phrase in query_lower for phrase in tracking_phrases)
     
     async def fetch_user_profile(self, auth_token):
         """Fetch user profile data from the Fresh Bus API"""
@@ -843,117 +1095,296 @@ class FreshBusAssistant:
             print(f"Exception fetching user profile: {e}")
             return None
     
+    # Updated method to handle user tickets with caching
+    async def fetch_user_tickets(self, auth_token, force_refresh=False):
+        """Fetch user's tickets and cache them for a short period"""
+        if not auth_token:
+            return None
+            
+        # Check cache first (if not forced to refresh)
+        cache_key = auth_token[:10]  # Use part of token as key
+        current_time = time.time()
+        
+        if not force_refresh and cache_key in self.user_tickets_cache:
+            # Use cache if it's less than 5 minutes old
+            if current_time - self.user_tickets_cache_expiry.get(cache_key, 0) < 300:
+                return self.user_tickets_cache[cache_key]
+        
+        if not self.http_session:
+            await self.init_http_session()
+        
+        try:
+            # Call the tickets API endpoint
+            url = f"{self.BASE_URL_CUSTOMER}/tickets"
+            print(f"Fetching user tickets: {url}")
+            
+            headers = {
+                "Authorization": f"Bearer {auth_token}",
+                "Content-Type": "application/json"
+            }
+            
+            async with self.http_session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    tickets_data = await response.json()
+                    
+                    # Cache the result
+                    self.user_tickets_cache[cache_key] = tickets_data
+                    self.user_tickets_cache_expiry[cache_key] = current_time
+                    
+                    print(f"Successfully fetched user tickets: {len(tickets_data)} tickets")
+                    return tickets_data
+                else:
+                    print(f"Error fetching user tickets: {response.status}")
+                    error_text = await response.text()
+                    print(f"Error response: {error_text}")
+                    return None
+        except Exception as e:
+            print(f"Exception fetching user tickets: {e}")
+            return None
+    
+    # Process tickets to find active, completed, and future tickets
+    async def process_user_tickets(self, tickets):
+        """Process user tickets to categorize them and get ETA data for active ones"""
+        if not tickets:
+            return {
+                "active": [],
+                "completed": [],
+                "future": []
+            }
+            
+        now = datetime.now()
+        active_tickets = []
+        completed_tickets = []
+        future_tickets = []
+        
+        for ticket in tickets:
+            # Parse journey date
+            journey_date = None
+            dropping_time = None
+            
+            try:
+                if "journeyDate" in ticket:
+                    journey_date_str = ticket["journeyDate"]
+                    
+                    # Handle different date formats
+                    if "T" in journey_date_str:
+                        journey_date = datetime.fromisoformat(journey_date_str.replace('Z', '+00:00'))
+                    else:
+                        # If only date is provided, add a default time
+                        journey_date = datetime.fromisoformat(f"{journey_date_str}T00:00:00+00:00")
+                
+                if "droppingTime" in ticket:
+                    dropping_time_str = ticket["droppingTime"]
+                    if "T" in dropping_time_str:
+                        dropping_time = datetime.fromisoformat(dropping_time_str.replace('Z', '+00:00'))
+                    
+            except Exception as e:
+                print(f"Error parsing journey date for ticket: {e}")
+                journey_date = None
+            
+            # Only process tickets with valid dates
+            if journey_date:
+                # Convert to local timezone for comparison
+                journey_local = journey_date.astimezone(timezone(timedelta(hours=5, minutes=30)))
+                now_local = now.astimezone(timezone(timedelta(hours=5, minutes=30)))
+                
+                # Calculate time difference in minutes
+                time_diff_minutes = (journey_local - now_local).total_seconds() / 60
+                
+                # Fetch ETA data for tickets that might be active
+                if -24*60 < time_diff_minutes < 30:
+                    # This could be an active ticket (within past 24h or next 30 min)
+                    if "tripId" in ticket:
+                        try:
+                            # Get ETA data
+                            eta_data = await self.fetch_eta_data(ticket["tripId"])
+                            ticket["eta_data"] = eta_data
+                            
+                            # If trip has ended based on ETA data
+                            if eta_data and eta_data.get("message") == "This trip has ended":
+                                completed_tickets.append(ticket)
+                            else:
+                                active_tickets.append(ticket)
+                        except Exception as e:
+                            print(f"Error fetching ETA for ticket {ticket.get('tripId')}: {e}")
+                            active_tickets.append(ticket)
+                    else:
+                        active_tickets.append(ticket)
+                # Future tickets
+                elif time_diff_minutes >= 30:
+                    future_tickets.append(ticket)
+                # Check if it's completed based on dropping time
+                elif dropping_time and dropping_time < now:
+                    # Get NPS data for completed tickets
+                    if "tripId" in ticket:
+                        try:
+                            nps_data = await self.fetch_nps_data(ticket["tripId"])
+                            ticket["nps_data"] = nps_data
+                        except Exception as e:
+                            print(f"Error fetching NPS for ticket {ticket.get('tripId')}: {e}")
+                    
+                    completed_tickets.append(ticket)
+                else:
+                    # Default to completed if in the past
+                    completed_tickets.append(ticket)
+        
+        # Sort by journey date (newest first)
+        active_tickets.sort(key=lambda x: x.get("journeyDate", ""), reverse=True)
+        future_tickets.sort(key=lambda x: x.get("journeyDate", ""))
+        completed_tickets.sort(key=lambda x: x.get("journeyDate", ""), reverse=True)
+        
+        return {
+            "active": active_tickets,
+            "completed": completed_tickets,
+            "future": future_tickets
+        }
+    
+    # Method to fetch ETA data
+    async def fetch_eta_data(self, trip_id):
+        """Fetch ETA data for a trip"""
+        if not self.http_session:
+            await self.init_http_session()
+            
+        try:
+            # Use the ETA API endpoint
+            url = f"https://api.freshbus.com/eta-data?id={trip_id}"
+            print(f"Fetching ETA data: {url}")
+            
+            async with self.http_session.get(url) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    print(f"Error fetching ETA data: {response.status}")
+                    error_text = await response.text()
+                    print(f"Error response: {error_text}")
+                    return {"message": "Could not retrieve tracking information"}
+        except Exception as e:
+            print(f"Exception fetching ETA data: {e}")
+            return {"message": f"Error retrieving tracking information: {str(e)}"}
+    
+    # Method to fetch NPS (feedback) data
+    async def fetch_nps_data(self, trip_id, auth_token=None):
+        """Fetch NPS/feedback data for a completed trip"""
+        if not auth_token:
+            return {"message": "Authentication required to fetch feedback data"}
+            
+        if not self.http_session:
+            await self.init_http_session()
+            
+        try:
+            # Use the feedback questions API
+            url = f"{self.BASE_URL_CUSTOMER}/tickets/feedbackQuestions"
+            print(f"Fetching feedback data: {url}")
+            
+            headers = {
+                "Authorization": f"Bearer {auth_token}",
+                "Content-Type": "application/json"
+            }
+            
+            async with self.http_session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    all_feedback = await response.json()
+                    
+                    # Find feedback for this specific trip
+                    if isinstance(all_feedback, list):
+                        trip_feedback = next((fb for fb in all_feedback if str(fb.get("tripId")) == str(trip_id)), None)
+                        if trip_feedback:
+                            return trip_feedback
+                    
+                    # Return all feedback data if we couldn't find trip-specific feedback
+                    return all_feedback
+                else:
+                    print(f"Error fetching feedback data: {response.status}")
+                    error_text = await response.text()
+                    print(f"Error response: {error_text}")
+                    return {"message": "Could not retrieve feedback information"}
+        except Exception as e:
+            print(f"Exception fetching feedback data: {e}")
+            return {"message": f"Error retrieving feedback information: {str(e)}"}
+    
+    # Format ETA data as JSON for consistent frontend display
+    def format_eta_data_as_json(self, eta_data, trip_id):
+        """Format ETA data as JSON for frontend display"""
+        eta_json = {
+            "tripId": trip_id,
+            "status": "unknown"
+        }
+        
+        if not eta_data:
+            eta_json["status"] = "unavailable"
+            eta_json["message"] = "Tracking information is not available"
+            return eta_json
+            
+        if "message" in eta_data and eta_data["message"] == "This trip has ended":
+            eta_json["status"] = "completed"
+            eta_json["message"] = "Trip has ended. The bus has completed its journey."
+        elif "message" in eta_data:
+            eta_json["status"] = "error"
+            eta_json["message"] = eta_data["message"]
+        else:
+            eta_json["status"] = "active"
+            
+            if "currentLocation" in eta_data:
+                eta_json["currentLocation"] = eta_data["currentLocation"]
+                
+            if "estimatedArrival" in eta_data:
+                eta_json["estimatedArrival"] = eta_data["estimatedArrival"]
+                
+            if "delayMinutes" in eta_data:
+                eta_json["delayMinutes"] = eta_data["delayMinutes"]
+                
+            if "lastUpdated" in eta_data:
+                eta_json["lastUpdated"] = eta_data["lastUpdated"]
+        
+        return eta_json
+    
+    # Format NPS data as JSON
+    def format_nps_data_as_json(self, nps_data, trip_id):
+        """Format NPS/feedback data as JSON for frontend display"""
+        nps_json = {
+            "tripId": trip_id,
+            "status": "unknown"
+        }
+        
+        if not nps_data:
+            nps_json["status"] = "unavailable"
+            nps_json["message"] = "Feedback information is not available"
+            return nps_json
+            
+        if "message" in nps_data:
+            nps_json["status"] = "error"
+            nps_json["message"] = nps_data["message"]
+        elif isinstance(nps_data, list) and len(nps_data) > 0:
+            nps_json["status"] = "available"
+            
+            # Find feedback for this specific trip
+            trip_feedback = next((fb for fb in nps_data if str(fb.get("tripId")) == str(trip_id)), None)
+            
+            if trip_feedback and "questions" in trip_feedback:
+                nps_json["questions"] = trip_feedback["questions"]
+            elif len(nps_data) > 0 and "questions" in nps_data[0]:
+                # Use first feedback item as fallback
+                nps_json["questions"] = nps_data[0]["questions"]
+        elif "questions" in nps_data:
+            nps_json["status"] = "available"
+            nps_json["questions"] = nps_data["questions"]
+        
+        return nps_json
+        
     async def get_active_tickets_and_status(self, auth_token):
         """Get user's active tickets and their status (future, ongoing, or completed)"""
         if not self.http_session:
             await self.init_http_session()
         
         try:
-            # First, get all tickets
-            headers = {
-                "Authorization": f"Bearer {auth_token}",
-                "Content-Type": "application/json"
-            }
-            
-            tickets_url = f"{self.BASE_URL}/tickets"
-            print(f"Fetching tickets: {tickets_url}")
-            
-            async with self.http_session.get(tickets_url, headers=headers) as response:
-                if response.status != 200:
-                    print(f"Error fetching tickets: {response.status}")
-                    return None
+            # Get all tickets
+            tickets = await self.fetch_user_tickets(auth_token)
+            if not tickets:
+                return None
                 
-                tickets_data = await response.json()
+            # Process into categories
+            return await self.process_user_tickets(tickets)
             
-            # Categorize tickets as future, ongoing, or completed
-            now = datetime.now()
-            future_tickets = []
-            ongoing_tickets = []
-            completed_tickets = []
-            
-            for ticket in tickets_data:
-                # Parse journey date and time
-                try:
-                    if "journeyDate" in ticket:
-                        journey_date_str = ticket["journeyDate"]
-                        
-                        # Handle different date formats
-                        if "T" in journey_date_str:
-                            journey_date = datetime.fromisoformat(journey_date_str.replace('Z', '+00:00'))
-                        else:
-                            # If only date is provided, add a default time
-                            journey_date = datetime.fromisoformat(f"{journey_date_str}T00:00:00+00:00")
-                        
-                        # Compute time differences
-                        time_diff_minutes = (journey_date - now).total_seconds() / 60
-                        
-                        # Journey is in the future (more than 30 minutes away)
-                        if time_diff_minutes > 30:
-                            future_tickets.append(ticket)
-                        # Journey is ongoing or about to start (within 30 minutes before to 24 hours after)
-                        elif time_diff_minutes > -24*60 and time_diff_minutes <= 30:
-                            ongoing_tickets.append(ticket)
-                        # Journey is completed (more than 24 hours ago)
-                        else:
-                            completed_tickets.append(ticket)
-                except Exception as e:
-                    print(f"Error parsing journey date for ticket: {e}")
-                    # Include the ticket in ongoing if we can't parse the date
-                    ongoing_tickets.append(ticket)
-            
-            # Get ETA data for ongoing tickets
-            for ticket in ongoing_tickets:
-                if "tripId" in ticket:
-                    trip_id = ticket["tripId"]
-                    eta_url = f"https://api.freshbus.com/eta-data?id={trip_id}"
-                    
-                    try:
-                        async with self.http_session.get(eta_url) as eta_response:
-                            if eta_response.status == 200:
-                                eta_data = await eta_response.json()
-                                ticket["eta_data"] = eta_data
-                                
-                                # If trip has ended, move to completed tickets
-                                if eta_data.get("message") == "This trip has ended":
-                                    completed_tickets.append(ticket)
-                                    ongoing_tickets.remove(ticket)
-                            else:
-                                print(f"Error fetching ETA data for trip {trip_id}: {eta_response.status}")
-                                ticket["eta_data"] = {"message": "Could not fetch ETA data"}
-                    except Exception as eta_err:
-                        print(f"Exception fetching ETA data: {eta_err}")
-                        ticket["eta_data"] = {"message": f"Error: {str(eta_err)}"}
-            
-            # Get feedback questions for completed tickets
-            if completed_tickets:
-                try:
-                    feedback_url = f"{self.BASE_URL}/tickets/feedbackQuestions"
-                    async with self.http_session.get(feedback_url, headers=headers) as fb_response:
-                        if fb_response.status == 200:
-                            feedback_data = await fb_response.json()
-                            
-                            # Associate feedback data with completed tickets
-                            for ticket in completed_tickets:
-                                trip_id = ticket.get("tripId")
-                                ticket_feedback = next((fb for fb in feedback_data if fb.get("tripId") == trip_id), None)
-                                if ticket_feedback:
-                                    ticket["feedback_data"] = ticket_feedback
-                                else:
-                                    ticket["feedback_data"] = {"message": "No feedback questions available"}
-                        else:
-                            print(f"Error fetching feedback questions: {fb_response.status}")
-                            for ticket in completed_tickets:
-                                ticket["feedback_data"] = {"message": "Could not fetch feedback questions"}
-                except Exception as fb_err:
-                    print(f"Exception fetching feedback questions: {fb_err}")
-                    for ticket in completed_tickets:
-                        ticket["feedback_data"] = {"message": f"Error: {str(fb_err)}"}
-            
-            return {
-                "future": future_tickets,
-                "ongoing": ongoing_tickets,
-                "completed": completed_tickets
-            }
         except Exception as e:
             print(f"Exception in get_active_tickets_and_status: {e}")
             return None
@@ -1029,7 +1460,7 @@ class FreshBusAssistant:
         header = f"I found {trip_count} bus{'es' if trip_count > 1 else ''} from {source} to {destination} for tomorrow:\n\n"
         
         formatted_buses = []
-        for trip in trips:
+        for idx, trip in enumerate(trips):
             # Get basic trip data directly from JSON
             bus_data = {
                 'tripid': trip.get('tripid', 'Unknown'),
@@ -1058,6 +1489,19 @@ class FreshBusAssistant:
                 except:
                     bus_data['arrival_time'] = "Unknown"
             
+            # Calculate duration
+            duration = "N/A"
+            if "boardingtime" in trip and "droppingtime" in trip:
+                try:
+                    b_dt = datetime.fromisoformat(trip["boardingtime"].replace('Z', '+00:00'))
+                    d_dt = datetime.fromisoformat(trip["droppingtime"].replace('Z', '+00:00'))
+                    duration_min = (d_dt - b_dt).total_seconds() / 60
+                    hours = int(duration_min // 60)
+                    minutes = int(duration_min % 60)
+                    duration = f"{hours}h {minutes}m"
+                except:
+                    duration = "N/A"
+            
             # Get seat recommendations
             window_seat = "33"  # Default reasonable values from API
             window_price = "598"
@@ -1073,27 +1517,109 @@ class FreshBusAssistant:
                     aisle_seat = api_data["recommendations"]["Reasonable"]["aisle"][0].get("number", "34")
                     aisle_price = api_data["recommendations"]["Reasonable"]["aisle"][0].get("price", "598")
             
-            # Build structured response using verified data only
-            formatted_bus = (
-                "Verified\n"
-                f"₹{bus_data['fare']}\n"
-                f"{bus_data['seats']} seats\n"
-                f"{bus_data['rating']}/5\n"
-                "Boarding\n"
-                f"{bus_data['boarding']}\n"
-                "Dropping\n"
-                f"{bus_data['dropping']}\n"
-                "Reasonable Seats\n"
-                f"Window {window_seat}\n"
-                f"(₹{window_price})\n"
-                f"Aisle {aisle_seat}\n"
-                f"(₹{aisle_price})\n"
-                "Book This Bus"
-            )
+            # Format each bus as a separate section with proper markdown
+            formatted_bus = f"> *🚌 {source} to {destination} | {bus_data.get('departure_time', 'Unknown')} - {bus_data.get('arrival_time', 'Unknown')} | {bus_data.get('vehicletype', 'AC Seater')} | {duration}*\n"
+            formatted_bus += f"> Price: ₹{bus_data.get('fare', 'Unknown')} | {bus_data.get('seats', 'Unknown')} seats | Rating: {bus_data.get('rating', 'Unknown')}/5\n"
+            formatted_bus += f"> Boarding: {bus_data.get('boarding', 'Unknown')}\n"
+            formatted_bus += f"> Dropping: {bus_data.get('dropping', 'Unknown')}\n"
+            formatted_bus += f"> Recommended seats:\n"
+            formatted_bus += f"> • **Reasonable**: Window {window_seat} (₹{window_price}), Aisle {aisle_seat} (₹{aisle_price})"
             
             formatted_buses.append(formatted_bus)
         
+        # Join with double newlines to ensure proper separation between buses
         return header + "\n\n".join(formatted_buses)
+
+    # Generate JSON response for bus data
+    def generate_json_bus_response(self, api_data, context):
+        """Generate JSON bus response from API data"""
+        trips = api_data.get("trips", [])
+        
+        if not trips:
+            return {"error": "No buses found matching your criteria."}
+        
+        # Create JSON output
+        bus_json = {"trips": []}
+        
+        for trip in trips:
+            # Format times
+            departure_time = "Unknown"
+            arrival_time = "Unknown"
+            duration = ""
+            
+            if "boardingtime" in trip:
+                try:
+                    dt = datetime.fromisoformat(trip["boardingtime"].replace('Z', '+00:00'))
+                    ist_dt = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
+                    departure_time = ist_dt.strftime("%I:%M %p").lstrip('0')
+                except:
+                    departure_time = "Unknown"
+            
+            if "droppingtime" in trip:
+                try:
+                    dt = datetime.fromisoformat(trip["droppingtime"].replace('Z', '+00:00'))
+                    ist_dt = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
+                    arrival_time = ist_dt.strftime("%I:%M %p").lstrip('0')
+                except:
+                    arrival_time = "Unknown"
+            
+            # Calculate duration
+            if "boardingtime" in trip and "droppingtime" in trip:
+                try:
+                    boarding_dt = datetime.fromisoformat(trip["boardingtime"].replace('Z', '+00:00'))
+                    dropping_dt = datetime.fromisoformat(trip["droppingtime"].replace('Z', '+00:00'))
+                    duration_mins = (dropping_dt - boarding_dt).total_seconds() / 60
+                    hours = int(duration_mins // 60)
+                    mins = int(duration_mins % 60)
+                    duration = f"{hours}h {mins}m"
+                except:
+                    duration = ""
+            
+            # Get source and destination
+            source = context.get('user_requested_source') or trip.get('source', 'Unknown')
+            destination = context.get('user_requested_destination') or trip.get('destination', 'Unknown')
+            
+            # Get recommendations
+            window_seat = "N/A"
+            window_price = "N/A"
+            aisle_seat = "N/A"
+            aisle_price = "N/A"
+            
+            if api_data.get("recommendations") and api_data["recommendations"].get("Reasonable"):
+                if api_data["recommendations"]["Reasonable"].get("window") and len(api_data["recommendations"]["Reasonable"]["window"]) > 0:
+                    window_seat = api_data["recommendations"]["Reasonable"]["window"][0].get("number", "N/A")
+                    window_price = api_data["recommendations"]["Reasonable"]["window"][0].get("price", "N/A")
+                
+                if api_data["recommendations"]["Reasonable"].get("aisle") and len(api_data["recommendations"]["Reasonable"]["aisle"]) > 0:
+                    aisle_seat = api_data["recommendations"]["Reasonable"]["aisle"][0].get("number", "N/A")
+                    aisle_price = api_data["recommendations"]["Reasonable"]["aisle"][0].get("price", "N/A")
+            
+            # Create bus JSON object
+            bus_data = {
+                "busNumber": trip.get('servicenumber', 'Unknown'),
+                "price": str(trip.get('fare', 'Unknown')),
+                "seats": str(trip.get('availableseats', 'N/A')),
+                "rating": str(trip.get('redbusrating', 'N/A')),
+                "from": source,
+                "to": destination,
+                "boardingPoint": trip.get('boardingpointname', 'Unknown'),
+                "droppingPoint": trip.get('droppingpointname', 'Unknown'),
+                "departureTime": departure_time,
+                "arrivalTime": arrival_time,
+                "duration": duration,
+                "tripId": str(trip.get('tripid', 'Unknown')),
+                "busType": trip.get('vehicletype', 'Standard'),
+                "recommendations": {
+                    "reasonable": {
+                        "window": {"seatNumber": str(window_seat), "price": str(window_price)},
+                        "aisle": {"seatNumber": str(aisle_seat), "price": str(aisle_price)}
+                    }
+                }
+            }
+            
+            bus_json["trips"].append(bus_data)
+        
+        return bus_json
 
     def generate_formatted_response(self, api_data, context):
         """Generate properly formatted bus response from API data."""
@@ -1108,7 +1634,7 @@ class FreshBusAssistant:
         
         # Check if we should use user's requested direction instead of API data
         use_user_direction = (context.get('user_requested_source') and 
-                             context.get('user_requested_destination'))
+                            context.get('user_requested_destination'))
         
         user_source = context.get('user_requested_source', '')
         user_dest = context.get('user_requested_destination', '')
@@ -1557,20 +2083,24 @@ class FreshBusAssistant:
     async def fetch_trips(self, source_id, destination_id, journey_date):
         if not self.http_session:
             await self.init_http_session()
+        
         url = f"{self.BASE_URL}/trips?journey_date={journey_date}&source_id={source_id}&destination_id={destination_id}"
         print(f"Fetching trips: {url}")
+        
         try:
             async with self.http_session.get(url) as response:
                 if response.status == 200:
                     data = await response.json()
                     
-                    # Print raw response for debugging
-                    print(f"Raw API response: {json.dumps(data)}")
-                    
-                    # Return deduplicated trips
-                    return self.deduplicate_trips(data)
+                    if data:
+                        print(f"Successfully fetched {len(data)} trips")
+                        return self.deduplicate_trips(data)
+                    else:
+                        print("API returned empty response")
+                        return []
                 else:
                     print(f"Error fetching trips: {response.status}")
+                    # Properly handle API errors without inventing data
                     return []
         except Exception as e:
             print(f"Exception fetching trips: {e}")
@@ -1828,31 +2358,6 @@ class FreshBusAssistant:
         
         return categorized_seats
     
-    def detect_language(self, text):
-        if re.search(r'[\u0C00-\u0C7F]', text):
-            return "telugu"
-        if re.search(r'[\u0900-\u097F]', text):
-            return "hindi"
-        if re.search(r'[\u0B80-\u0BFF]', text):
-            return "tamil"
-        if re.search(r'[\u0C80-\u0CFF]', text):
-            return "kannada"
-        if re.search(r'[\u0D00-\u0D7F]', text):
-            return "malayalam"
-        tenglish_words = ["meeku", "naaku", "undi", "ledu", "kavalante", "cheyandi", "telugu"]
-        if any(word in text.lower() for word in tenglish_words):
-            return "tenglish"
-        hinglish_words = ["kya", "hai", "nahi", "aap", "karenge", "chahiye", "dijiye"]
-        if any(word in text.lower() for word in hinglish_words):
-            return "hinglish"
-        kanglish_words = ["naanu", "ninge", "bega", "swalpa", "banni", "guru"]
-        if any(word in text.lower() for word in kanglish_words):
-            return "kanglish"
-        tamlish_words = ["enna", "neenga", "inge", "vanakkam", "romba", "irukku"]
-        if any(word in text.lower() for word in tamlish_words):
-            return "tamlish"
-        return "english"
-    
     def _build_direct_context_from_api_data(self, api_data, query, context):
         if not api_data:
             return None
@@ -1896,6 +2401,60 @@ class FreshBusAssistant:
             # Return immediately with trip ended status
             return "\n".join(context_parts)
         
+        # Handle tracking data
+        if api_data.get("tracking"):
+            tracking_data = api_data["tracking"]
+            tracking_type = tracking_data.get("type", "unknown")
+            
+            if tracking_type == "active_ticket":
+                context_parts.append("\nBUS TRACKING INFORMATION (ACTIVE TICKET):")
+                context_parts.append(f"• Trip ID: {tracking_data.get('tripId', 'Unknown')}")
+                context_parts.append(f"• Journey: {tracking_data.get('from', 'Unknown')} to {tracking_data.get('to', 'Unknown')}")
+                context_parts.append(f"• Journey Date: {tracking_data.get('journeyDate', 'Unknown')}")
+                
+                # Add ETA data if available
+                eta_data = tracking_data.get("eta", {})
+                if eta_data:
+                    if "message" in eta_data:
+                        context_parts.append(f"• Status: {eta_data['message']}")
+                    else:
+                        if "currentLocation" in eta_data:
+                            context_parts.append(f"• Current Bus Location: {eta_data['currentLocation']}")
+                        if "estimatedArrival" in eta_data:
+                            context_parts.append(f"• Estimated Arrival: {eta_data['estimatedArrival']}")
+                        if "delayMinutes" in eta_data:
+                            context_parts.append(f"• Delay: {eta_data['delayMinutes']} minutes")
+            
+            elif tracking_type == "completed_ticket":
+                context_parts.append("\nBUS TRACKING INFORMATION (COMPLETED JOURNEY):")
+                context_parts.append(f"• Trip ID: {tracking_data.get('tripId', 'Unknown')}")
+                context_parts.append(f"• Completed Journey: {tracking_data.get('from', 'Unknown')} to {tracking_data.get('to', 'Unknown')}")
+                context_parts.append(f"• Journey Date: {tracking_data.get('journeyDate', 'Unknown')}")
+                context_parts.append("• Status: This journey has been completed.")
+                
+                # Add NPS data if available
+                nps_data = tracking_data.get("nps", {})
+                if nps_data and nps_data.get("status") == "available" and nps_data.get("questions"):
+                    context_parts.append("\nFEEDBACK REQUESTED:")
+                    for i, question in enumerate(nps_data["questions"]):
+                        if "questionText" in question:
+                            context_parts.append(f"• Question {i+1}: {question['questionText']}")
+            
+            elif tracking_type == "future_ticket":
+                context_parts.append("\nBUS TRACKING INFORMATION (FUTURE JOURNEY):")
+                context_parts.append(f"• Trip ID: {tracking_data.get('tripId', 'Unknown')}")
+                context_parts.append(f"• Future Journey: {tracking_data.get('from', 'Unknown')} to {tracking_data.get('to', 'Unknown')}")
+                context_parts.append(f"• Journey Date: {tracking_data.get('journeyDate', 'Unknown')}")
+                context_parts.append("• Status: This journey is scheduled for the future. Tracking will be available closer to departure time.")
+                
+            else:
+                context_parts.append(f"\nBUS TRACKING INFORMATION ({tracking_type.upper()}):")
+                context_parts.append(f"• Message: {tracking_data.get('message', 'No tracking data available')}")
+            
+            # Return tracking information
+            return "\n".join(context_parts)
+        
+        # Standard bus search results
         if api_data.get("trips"):
             trips = api_data.get("trips", [])
             trip_count = len(trips)
@@ -1999,6 +2558,7 @@ class FreshBusAssistant:
                 context_parts.append(f"  → Boards at: {boarding_point}")
                 context_parts.append(f"  → Drops at: {dropping_point}")
         
+        # Continue with standard context building for other API data
         if api_data.get("boarding_points"):
             context_parts.append("\nAvailable boarding points:")
             for point in api_data["boarding_points"]:
@@ -2117,30 +2677,22 @@ class FreshBusAssistant:
             context_parts.append(f"Date: {ticket.get('journeyDate', 'Unknown')}")
             context_parts.append(f"Trip ID: {ticket.get('tripId', 'Unknown')}")
             
-            # Add ETA data for ongoing journey
-            eta_data = ticket.get("eta_data", {})
-            if "message" in eta_data and eta_data["message"] == "This trip has ended":
-                context_parts.append("Status: The journey has ended.")
-            elif "message" in eta_data:
-                context_parts.append(f"Status: {eta_data['message']}")
-            else:
-                if "currentLocation" in eta_data:
-                    context_parts.append(f"Current Location: {eta_data['currentLocation']}")
-                if "estimatedArrival" in eta_data:
-                    context_parts.append(f"Estimated Arrival: {eta_data['estimatedArrival']}")
-                if "delayMinutes" in eta_data:
-                    context_parts.append(f"Delay: {eta_data['delayMinutes']} minutes")
+            # Add ETA data if available
+            if "eta_data" in ticket:
+                eta_data = ticket["eta_data"]
+                
+                if "message" in eta_data and eta_data["message"] == "This trip has ended":
+                    context_parts.append("Status: This trip has already ended.")
+                elif "message" in eta_data:
+                    context_parts.append(f"Status: {eta_data['message']}")
+                else:
+                    if "currentLocation" in eta_data:
+                        context_parts.append(f"Current Location: {eta_data['currentLocation']}")
+                    if "estimatedArrival" in eta_data:
+                        context_parts.append(f"Estimated Arrival: {eta_data['estimatedArrival']}")
+                    if "delayMinutes" in eta_data:
+                        context_parts.append(f"Delay: {eta_data['delayMinutes']} minutes")
         
-        # Add matched future ticket information
-        if api_data.get("matched_future_ticket"):
-            ticket = api_data["matched_future_ticket"]
-            context_parts.append("\nUPCOMING JOURNEY:")
-            context_parts.append(f"Journey from {ticket.get('source', 'Unknown')} to {ticket.get('destination', 'Unknown')}")
-            context_parts.append(f"Date: {ticket.get('journeyDate', 'Unknown')}")
-            context_parts.append(f"Trip ID: {ticket.get('tripId', 'Unknown')}")
-            context_parts.append("Status: This journey is in the future. Live tracking will be available 30 minutes before departure.")
-        
-        # Add matched completed ticket information with feedback
         if api_data.get("matched_completed_ticket"):
             ticket = api_data["matched_completed_ticket"]
             context_parts.append("\nCOMPLETED JOURNEY:")
@@ -2149,90 +2701,346 @@ class FreshBusAssistant:
             context_parts.append(f"Trip ID: {ticket.get('tripId', 'Unknown')}")
             context_parts.append("Status: This journey has been completed.")
             
-            # Add feedback questions if available
-            if api_data.get("feedback_data"):
-                feedback = api_data["feedback_data"]
-                if "message" in feedback:
-                    context_parts.append(f"Feedback: {feedback['message']}")
-                else:
-                    context_parts.append("\nFEEDBACK QUESTIONS:")
+            # Add NPS/feedback data if available
+            if "nps_data" in ticket:
+                nps_data = ticket["nps_data"]
+                
+                context_parts.append("\nFEEDBACK QUESTIONS:")
+                if isinstance(nps_data, list) and len(nps_data) > 0:
+                    feedback = nps_data[0]  # Use first feedback item
                     if "questions" in feedback:
-                        for i, question in enumerate(feedback["questions"]):
-                            context_parts.append(f"Question {i+1}: {question.get('questionText', '')}")
-                    context_parts.append("\nYou can provide feedback on your journey through the Fresh Bus app or website.")
+                        for question in feedback["questions"]:
+                            context_parts.append(f"• {question.get('questionText', 'Rate your journey')}")
+                elif nps_data.get("questions"):
+                    for question in nps_data["questions"]:
+                        context_parts.append(f"• {question.get('questionText', 'Rate your journey')}")
+                else:
+                    context_parts.append(f"• {nps_data.get('message', 'Please rate your journey')}")
         
-        # Add lists of future/ongoing tickets if available
-        if api_data.get("future_tickets") or api_data.get("ongoing_tickets") or api_data.get("completed_tickets"):
-            if api_data.get("future_tickets"):
-                context_parts.append(f"\nYou have {len(api_data['future_tickets'])} upcoming journeys:")
-                for i, ticket in enumerate(api_data['future_tickets'][:3]): # Limit to 3 for brevity
-                    context_parts.append(f"{i+1}. From {ticket.get('source', 'Unknown')} to {ticket.get('destination', 'Unknown')} on {ticket.get('journeyDate', 'Unknown')}")
-                    context_parts.append(f"   Trip ID: {ticket.get('tripId', 'Unknown')}")
-                    
-            if api_data.get("ongoing_tickets"):
-                context_parts.append(f"\nYou have {len(api_data['ongoing_tickets'])} ongoing/imminent journeys:")
-                for i, ticket in enumerate(api_data['ongoing_tickets']):
-                    context_parts.append(f"{i+1}. From {ticket.get('source', 'Unknown')} to {ticket.get('destination', 'Unknown')} on {ticket.get('journeyDate', 'Unknown')}")
-                    context_parts.append(f"   Trip ID: {ticket.get('tripId', 'Unknown')}")
-                    eta_data = ticket.get("eta_data", {})
-                    if "currentLocation" in eta_data:
-                        context_parts.append(f"   Current Location: {eta_data['currentLocation']}")
+        if api_data.get("matched_upcoming_ticket"):
+            ticket = api_data["matched_upcoming_ticket"]
+            context_parts.append("\nUPCOMING JOURNEY:")
+            context_parts.append(f"Journey from {ticket.get('source', 'Unknown')} to {ticket.get('destination', 'Unknown')}")
+            context_parts.append(f"Date: {ticket.get('journeyDate', 'Unknown')}")
+            context_parts.append(f"Trip ID: {ticket.get('tripId', 'Unknown')}")
+            context_parts.append("Status: This journey is scheduled for the future.")
+        
+        # Add user profile information if available
+        if api_data.get("user_profile"):
+            profile = api_data["user_profile"]
+            context_parts.append("\nUSER PROFILE INFORMATION:")
             
-            if api_data.get("completed_tickets"):
-                context_parts.append(f"\nYou have {len(api_data['completed_tickets'])} completed journeys.")
+            # Add basic info
+            for field in ['name', 'email', 'mobile', 'gender']:
+                if profile.get(field):
+                    context_parts.append(f"• {field.capitalize()}: {profile[field]}")
+            
+            # Add address if available
+            if profile.get('address'):
+                context_parts.append(f"• Address: {profile['address']}")
+                
+            # Add loyalty coins if available
+            if profile.get('availableCoins'):
+                context_parts.append(f"• Available Coins: {profile['availableCoins']}")
+                
+            # Add preferred language if available
+            if profile.get('preferredLanguage'):
+                context_parts.append(f"• Preferred Language: {profile['preferredLanguage']}")
         
-        # Add final trip count reminder
-        if api_data.get("trips"):
-            trip_count = len(api_data["trips"])
-            context_parts.append(f"\nFINAL REMINDER: There are EXACTLY {trip_count} unique bus services available. Display exactly {trip_count} bus options, no more and no less.")
-        
+        # Build final context string
         return "\n".join(context_parts)
     
     def _generate_fallback_response(self, api_data, query, context):
-        """Generate a fallback response when Claude API is unavailable"""
-        # Special handling for trip ended
-        if api_data.get("eta_data") and api_data["eta_data"].get("message") == "This trip has ended":
-            trip_id = api_data.get("trip_id", "Unknown")
-            response = f"This trip (ID: {trip_id}) has ended. The bus has completed its journey.\n\n"
-            
-            # Check for feedback data
-            if api_data.get("feedback_data"):
-                feedback = api_data["feedback_data"]
-                
-                # Handle array format
-                if isinstance(feedback, list) and len(feedback) > 0:
-                    response += "You can provide feedback on your journey through the Fresh Bus app.\n\n"
-                    
-                    # Use the first feedback item in the array
-                    first_feedback = feedback[0]
-                    if first_feedback.get("questions"):
-                        response += "Feedback questions:\n"
-                        for i, question in enumerate(first_feedback["questions"]):
-                            response += f"{i+1}. {question.get('questionText', 'Rate your journey')}\n"
-                # Handle object format
-                elif feedback.get("questions"):
-                    response += "You can provide feedback on your journey through the Fresh Bus app.\n\n"
-                    response += "Feedback questions:\n"
-                    for i, question in enumerate(feedback["questions"]):
-                        response += f"{i+1}. {question.get('questionText', 'Rate your journey')}\n"
-                elif feedback.get("message"):
-                    response += feedback.get("message")
-                else:
-                    response += "You can provide feedback on your journey through the Fresh Bus app."
-            else:
-                response += "You can check for feedback options in the Fresh Bus app."
-            
-            return response
-            
-        if not api_data or not api_data.get("trips"):
-            return "I'm sorry, I couldn't find any buses matching your criteria right now. Please try different dates or routes."
+        """Generate a fallback response when the LLM is not available or fails"""
+        fallback_parts = []
+        query_lower = query.lower()
         
-        # Use the direct bus response generator for consistent formatting
-        return self.generate_direct_bus_response(api_data, context)
+        # Handle greetings
+        if query_lower in ["hi", "hello", "hey", "hola", "namaste"]:
+            return "Hello! I'm Ṧ.AI, your Fresh Bus travel assistant. How can I help you with your bus travel today?"
+        
+        # Handle identity questions
+        if "name" in query_lower and ("your" in query_lower or "you" in query_lower):
+            return "My name is Ṧ.AI (pronounced 'Sai'). I'm your Fresh Bus travel assistant. How can I help you with your bus travel today?"
+        
+        # Handle what/who are you questions
+        if ("what are you" in query_lower or "who are you" in query_lower):
+            return "I'm Ṧ.AI, the Fresh Bus travel assistant. I can help you find buses, check schedules, book tickets, and track your journeys. How can I assist you today?"
+        
+        # Handle the case when no trips are found
+        if api_data and api_data.get("no_trips_info"):
+            info = api_data["no_trips_info"]
+            return info["message"]
+        
+        # Original fallback logic for bus-related queries
+        fallback_parts.append("Hello, I'm your Fresh Bus travel assistant.")
+        
+        # Check for tracking requests first
+        is_tracking_request = self.is_bus_tracking_query(query)
+        if is_tracking_request:
+            if api_data.get("tracking"):
+                tracking_data = api_data["tracking"]
+                tracking_type = tracking_data.get("type", "unknown")
+                
+                if tracking_type == "active_ticket":
+                    fallback_parts.append("\n🚍 Bus Tracking Information:")
+                    fallback_parts.append(f"Your bus from {tracking_data.get('from', 'Unknown')} to {tracking_data.get('to', 'Unknown')} is on the move.")
+                    
+                    # Add ETA data if available
+                    eta_data = tracking_data.get("eta", {})
+                    if eta_data:
+                        if "currentLocation" in eta_data:
+                            fallback_parts.append(f"Current Location: {eta_data['currentLocation']}")
+                        if "estimatedArrival" in eta_data:
+                            fallback_parts.append(f"Estimated Arrival: {eta_data['estimatedArrival']}")
+                        if "delayMinutes" in eta_data and int(eta_data['delayMinutes']) > 0:
+                            fallback_parts.append(f"The bus is delayed by {eta_data['delayMinutes']} minutes.")
+                        
+                elif tracking_type == "completed_ticket":
+                    fallback_parts.append("\n✓ This trip has already ended.")
+                    fallback_parts.append("The bus has completed its journey.")
+                    
+                    # Add NPS data if available
+                    nps_data = tracking_data.get("nps", {})
+                    if nps_data and nps_data.get("status") == "available":
+                        fallback_parts.append("\nPlease consider providing feedback on your journey through the Fresh Bus app.")
+                        
+                elif tracking_type == "future_ticket":
+                    fallback_parts.append("\n⏰ Your upcoming trip is scheduled for the future.")
+                    fallback_parts.append(f"Journey Date: {tracking_data.get('journeyDate', 'Unknown')}")
+                    fallback_parts.append("Tracking will be available closer to departure time.")
+                    
+                else:
+                    fallback_parts.append("\nI couldn't find any active bus trips to track.")
+                    fallback_parts.append("Please ensure you're logged in and have an active booking.")
+            else:
+                fallback_parts.append("\nI couldn't find any active bus trips to track.")
+                fallback_parts.append("Please ensure you're logged in and have an active booking.")
+                
+            return " ".join(fallback_parts)
+        
+        # Handle trip ended status
+        if api_data.get("eta_data") and api_data["eta_data"].get("message") == "This trip has ended":
+            fallback_parts.append("\n✓ This trip has already ended.")
+            fallback_parts.append("The bus has completed its journey.")
+            
+            # Add feedback info if available
+            if api_data.get("feedback_data"):
+                fallback_parts.append("\nPlease consider providing feedback on your journey through the Fresh Bus app.")
+                
+            return " ".join(fallback_parts)
+        
+        # Handle direction reversed case
+        if api_data.get("direction_reversed") and api_data.get("trips"):
+            source = context.get('user_requested_source', '').capitalize()
+            destination = context.get('user_requested_destination', '').capitalize()
+            
+            fallback_parts.append(f"\nI couldn't find buses from {source} to {destination}, but I found buses going in the reverse direction (from {destination} to {source}).")
+            fallback_parts.append("Here are the available options:")
+            
+            trips = api_data.get("trips", [])
+            for i, trip in enumerate(trips[:3]):  # Limit to first 3 buses
+                fallback_parts.append("\n")
+                
+                # Format basic trip info (adjust to reflect the user's requested direction)
+                boarding_time = "Unknown"
+                if "boardingtime" in trip:
+                    try:
+                        dt = datetime.fromisoformat(trip["boardingtime"].replace('Z', '+00:00'))
+                        ist_dt = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
+                        boarding_time = ist_dt.strftime("%I:%M %p")
+                    except:
+                        boarding_time = "Unknown"
+                
+                dropping_time = "Unknown"
+                if "droppingtime" in trip:
+                    try:
+                        dt = datetime.fromisoformat(trip["droppingtime"].replace('Z', '+00:00'))
+                        ist_dt = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
+                        dropping_time = ist_dt.strftime("%I:%M %p")
+                    except:
+                        dropping_time = "Unknown"
+                
+                price = trip.get('fare', 'Unknown')
+                available_seats = trip.get('availableseats', 'Unknown')
+                
+                fallback_parts.append(f"Bus {i+1}: {boarding_time} - {dropping_time} | ₹{price} | {available_seats} seats available")
+                # Swap points to match user's requested direction
+                fallback_parts.append(f"Boarding: {trip.get('droppingpointname', 'Unknown')}")  # Show dropping as boarding
+                fallback_parts.append(f"Dropping: {trip.get('boardingpointname', 'Unknown')}")  # Show boarding as dropping
+            
+            if len(trips) > 3:
+                fallback_parts.append(f"\n...and {len(trips) - 3} more buses available.")
+                
+            fallback_parts.append("\nWould you like to proceed with one of these options?")
+            
+            return " ".join(fallback_parts)
+        
+        # Handle bus search results (normal case)
+        if api_data.get("trips"):
+            trips = api_data.get("trips", [])
+            
+            # Get source and destination
+            source = context.get('user_requested_source') or trips[0].get('source', 'Unknown')
+            destination = context.get('user_requested_destination') or trips[0].get('destination', 'Unknown')
+            
+            fallback_parts.append(f"\nI found {len(trips)} bus{'es' if len(trips) > 1 else ''} from {source} to {destination}.")
+            
+            for i, trip in enumerate(trips[:3]):  # Limit to first 3 buses
+                fallback_parts.append("\n")
+                
+                # Format basic trip info
+                boarding_time = "Unknown"
+                if "boardingtime" in trip:
+                    try:
+                        dt = datetime.fromisoformat(trip["boardingtime"].replace('Z', '+00:00'))
+                        ist_dt = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
+                        boarding_time = ist_dt.strftime("%I:%M %p")
+                    except:
+                        boarding_time = "Unknown"
+                
+                dropping_time = "Unknown"
+                if "droppingtime" in trip:
+                    try:
+                        dt = datetime.fromisoformat(trip["droppingtime"].replace('Z', '+00:00'))
+                        ist_dt = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
+                        dropping_time = ist_dt.strftime("%I:%M %p")
+                    except:
+                        dropping_time = "Unknown"
+                
+                price = trip.get('fare', 'Unknown')
+                available_seats = trip.get('availableseats', 'Unknown')
+                
+                fallback_parts.append(f"Bus {i+1}: {boarding_time} - {dropping_time} | ₹{price} | {available_seats} seats available")
+                fallback_parts.append(f"Boarding: {trip.get('boardingpointname', 'Unknown')}")
+                fallback_parts.append(f"Dropping: {trip.get('droppingpointname', 'Unknown')}")
+            
+            if len(trips) > 3:
+                fallback_parts.append(f"\n...and {len(trips) - 3} more buses available.")
+                
+            fallback_parts.append("\nPlease ask for more details about any specific bus or provide more information to refine your search.")
+            
+            return " ".join(fallback_parts)
+        
+        # Generic fallback response
+        fallback_parts.append("I'm currently having trouble processing your request. Here's what I understand:")
+        
+        if context.get('user_requested_source') and context.get('user_requested_destination'):
+            fallback_parts.append(f"\nYou want to travel from {context['user_requested_source']} to {context['user_requested_destination']}.")
+        
+        if context.get('last_date'):
+            fallback_parts.append(f"Date of travel: {context['last_date']}")
+            
+        fallback_parts.append("\nPlease try again with a simple request like 'Show buses from [source] to [destination]' or 'Book a ticket to [destination]'.")
+        
+        return " ".join(fallback_parts)
+        
+        # Handle trip ended status
+        if api_data.get("eta_data") and api_data["eta_data"].get("message") == "This trip has ended":
+            fallback_parts.append("\n✓ This trip has already ended.")
+            fallback_parts.append("The bus has completed its journey.")
+            
+            # Add feedback info if available
+            if api_data.get("feedback_data"):
+                fallback_parts.append("\nPlease consider providing feedback on your journey through the Fresh Bus app.")
+                
+            return " ".join(fallback_parts)
+        
+        # Handle bus search results
+        if api_data.get("trips"):
+            trips = api_data.get("trips", [])
+            
+            # Get source and destination
+            source = context.get('user_requested_source') or trips[0].get('source', 'Unknown')
+            destination = context.get('user_requested_destination') or trips[0].get('destination', 'Unknown')
+            
+            fallback_parts.append(f"\nI found {len(trips)} bus{'es' if len(trips) > 1 else ''} from {source} to {destination}.")
+            
+            for i, trip in enumerate(trips[:3]):  # Limit to first 3 buses
+                fallback_parts.append("\n")
+                
+                # Format basic trip info
+                boarding_time = "Unknown"
+                if "boardingtime" in trip:
+                    try:
+                        dt = datetime.fromisoformat(trip["boardingtime"].replace('Z', '+00:00'))
+                        ist_dt = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
+                        boarding_time = ist_dt.strftime("%I:%M %p")
+                    except:
+                        boarding_time = "Unknown"
+                
+                dropping_time = "Unknown"
+                if "droppingtime" in trip:
+                    try:
+                        dt = datetime.fromisoformat(trip["droppingtime"].replace('Z', '+00:00'))
+                        ist_dt = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
+                        dropping_time = ist_dt.strftime("%I:%M %p")
+                    except:
+                        dropping_time = "Unknown"
+                
+                price = trip.get('fare', 'Unknown')
+                available_seats = trip.get('availableseats', 'Unknown')
+                
+                fallback_parts.append(f"Bus {i+1}: {boarding_time} - {dropping_time} | ₹{price} | {available_seats} seats available")
+                fallback_parts.append(f"Boarding: {trip.get('boardingpointname', 'Unknown')}")
+                fallback_parts.append(f"Dropping: {trip.get('droppingpointname', 'Unknown')}")
+            
+            if len(trips) > 3:
+                fallback_parts.append(f"\n...and {len(trips) - 3} more buses available.")
+                
+            fallback_parts.append("\nPlease ask for more details about any specific bus or provide more information to refine your search.")
+            
+            return " ".join(fallback_parts)
+        
+        # Generic fallback response
+        fallback_parts.append("I'm currently having trouble processing your request. Here's what I understand:")
+        
+        if context.get('user_requested_source') and context.get('user_requested_destination'):
+            fallback_parts.append(f"\nYou want to travel from {context['user_requested_source']} to {context['user_requested_destination']}.")
+        
+        if context.get('last_date'):
+            fallback_parts.append(f"Date of travel: {context['last_date']}")
+            
+        fallback_parts.append("\nPlease try again with a simple request like 'Show buses from [source] to [destination]' or 'Book a ticket to [destination]'.")
+        
+        return " ".join(fallback_parts)
     
-    async def generate_response(self, query, session_id=None, user_gender=None, user_location=None, detected_language=None):
+    async def generate_response(self, query, session_id=None, user_gender=None, user_location=None, detected_language=None, provider=None, model=None):
+        """Generate a response to a user query"""
+        print(f"\n--- New Query: '{query}' ---")
         session, session_id = self.get_or_create_session(session_id)
         context = session['context']
+        
+        # Determine if this is a simple query that shouldn't use fallback
+        is_simple_query = query.lower() in ["hi", "hello", "hey"] or "name" in query.lower() or "who are you" in query.lower()
+        print(f"Is simple query: {is_simple_query}")
+        
+        # Temporary provider switch if requested
+        original_provider = None
+        if provider and model:
+            try:
+                # Store original provider to restore later
+                original_provider = self.ai_provider
+                
+                # Create and initialize new provider
+                new_provider = AIProviderFactory.create_provider(
+                    provider_name=provider,
+                    model=model
+                )
+                await new_provider.initialize()
+                self.ai_provider = new_provider
+                
+                print(f"Temporarily switched to {provider} {model} for this request")
+            except Exception as e:
+                print(f"Error switching provider: {e}")
+                # Continue with current provider if there's an error
+        
+        # Check if this is a silent model switch request
+        if query == "_model_switch_":
+            print("Silent model switch detected - not generating a response")
+            # Just return a simple acknowledgment
+            yield json.dumps({"text": "", "done": True, "session_id": session_id})
+            return
         
         # Check if user is authenticated
         user_authenticated = False
@@ -2246,276 +3054,352 @@ class FreshBusAssistant:
             user_mobile = user_data.get('mobile')
             auth_token = context['auth'].get('token')
             print(f"Processing request for authenticated user: {user_mobile}")
-            print(f"User profile data: {context.get('user_profile')}")
         
-        # Improved location handling
-        if user_location:
-            print(f"Processing user location: {user_location}")
-            
-            # Ensure the location format is correct
-            if isinstance(user_location, dict) and 'latitude' in user_location and 'longitude' in user_location:
-                try:
-                    # Validate latitude and longitude values
-                    lat = float(user_location['latitude'])
-                    lon = float(user_location['longitude'])
-                    
-                    if -90 <= lat <= 90 and -180 <= lon <= 180:
-                        print(f"Valid location data: Lat {lat}, Lon {lon}")
-                        context['user_location'] = user_location
-                    else:
-                        print(f"Invalid location coordinates: Lat {lat}, Lon {lon}")
-                        context['user_location'] = None
-                except (ValueError, TypeError) as e:
-                    print(f"Invalid location data: {e}")
-                    context['user_location'] = None
-            else:
-                print(f"Invalid location format: {user_location}")
-                context['user_location'] = None
-            
+        # Store location if provided
+        if user_location and user_location.get('latitude') and user_location.get('longitude'):
+            context['user_location'] = user_location
+            print(f"Updated user location: {user_location}")
+        
+        # Set gender if provided
+        if user_gender:
+            context['gender'] = user_gender
+            print(f"Set user gender: {user_gender}")
+        
+        # Set language
         if detected_language:
             context['language'] = detected_language
         else:
             context['language'] = self.detect_language(query)
         print(f"Language detected/set: {context['language']}")
         
-        # Extract user's requested source and destination from query
+        # Extract locations from query
         source, destination = self.extract_locations(query)
         if source and destination:
-            # Store user's requested direction
             context['user_requested_source'] = source
             context['user_requested_destination'] = destination
-            context['last_source'] = source
-            context['last_destination'] = destination
-            print(f"User requested direction: FROM {source} TO {destination}")
-        elif not source and context.get('last_source'):
-            source = context['last_source']
-        elif not destination and context.get('last_destination'):
-            destination = context['last_destination']
+            print(f"Extracted locations: {source} to {destination}")
         
+        # Extract ticket count
         ticket_count = self.extract_ticket_count(query)
         if ticket_count:
             context['ticket_count'] = ticket_count
+            print(f"Extracted ticket count: {ticket_count}")
         
+        # Extract date
+        if not 'last_date' in context or 'tomorrow' in query.lower() or 'today' in query.lower():
+            date = self.parse_date(query)
+            context['last_date'] = date
+            print(f"Extracted date: {date}")
+        
+        # Add user message to session
         session['messages'].append({"role": "user", "content": query})
         api_data = {}
         
-        # Check if user is asking about bus location or tracking
-        is_tracking_request = any(phrase in query.lower() for phrase in 
-                                ["where is my bus", "track my bus", "bus location", "track bus", 
-                                "bus tracking", "where is the bus", "bus eta", "arrival time", 
-                                "when will bus arrive", "trip id", "tripid", "trip status"])
+        # Check if this is a bus tracking request
+        is_tracking_request = self.is_bus_tracking_query(query)
+        print(f"Is tracking request: {is_tracking_request}")
 
+        # Handle bus tracking requests
         if is_tracking_request:
             print("Bus tracking request detected")
-            trip_id = None
             
-            # Better trip ID extraction
-            trip_id_match = re.search(r'trip\s*id\s*(?:is|:)?\s*(\d+)', query.lower())
-            if not trip_id_match:
-                # Also check for just numbers (people often just paste the ID)
-                trip_id_match = re.search(r'\b(\d{5,})\b', query.lower())
-            if trip_id_match:
-                trip_id = trip_id_match.group(1)
-                print(f"Trip ID found in query: {trip_id}")
-            
-            # If user is authenticated, check for tickets
+            # Only proceed with authenticated users for tracking
             if user_authenticated and auth_token:
-                print("Checking user's tickets")
-                ticket_status = await self.get_active_tickets_and_status(auth_token)
+                # Fetch user tickets 
+                tickets = await self.fetch_user_tickets(auth_token)
                 
-                if ticket_status:
-                    # Add the categorized tickets to API data
-                    api_data["future_tickets"] = ticket_status.get("future", [])
-                    api_data["ongoing_tickets"] = ticket_status.get("ongoing", [])
-                    api_data["completed_tickets"] = ticket_status.get("completed", [])
+                if tickets:
+                    # Process tickets to get active, completed, future tickets
+                    processed_tickets = await self.process_user_tickets(tickets)
                     
-                    # If there's a trip ID, try to find it in tickets
-                    if trip_id:
-                        # Check ongoing tickets first
-                        ongoing_match = next((t for t in ticket_status.get("ongoing", []) 
-                                            if t.get("tripId") == trip_id), None)
-                        if ongoing_match:
-                            api_data["matched_ongoing_ticket"] = ongoing_match
-                            api_data["eta_data"] = ongoing_match.get("eta_data", {})
-                        
-                        # Then check future tickets
-                        future_match = next((t for t in ticket_status.get("future", []) 
-                                        if t.get("tripId") == trip_id), None)
-                        if future_match:
-                            api_data["matched_future_ticket"] = future_match
-                        
-                        # Finally check completed tickets
-                        completed_match = next((t for t in ticket_status.get("completed", []) 
-                                            if t.get("tripId") == trip_id), None)
-                        if completed_match:
-                            api_data["matched_completed_ticket"] = completed_match
-                            api_data["feedback_data"] = completed_match.get("feedback_data", {})
+                    # Add tickets data to API data
+                    api_data["all_tickets"] = tickets
+                    api_data["active_tickets"] = processed_tickets["active"]
+                    api_data["completed_tickets"] = processed_tickets["completed"]
+                    api_data["future_tickets"] = processed_tickets["future"]
                     
-                    # If no trip ID was provided, check if there's exactly one ongoing ticket
-                    elif len(ticket_status.get("ongoing", [])) == 1:
-                        ticket = ticket_status["ongoing"][0]
-                        trip_id = ticket.get("tripId")
-                        api_data["matched_ongoing_ticket"] = ticket
-                        api_data["eta_data"] = ticket.get("eta_data", {})
-                        print(f"Using trip ID from ongoing ticket: {trip_id}")
+                    # Check if we have active tickets
+                    if processed_tickets["active"]:
+                        # Use the most recent active ticket
+                        active_ticket = processed_tickets["active"][0]
+                        trip_id = active_ticket.get("tripId")
                         
-                    # If there are no ongoing tickets but exactly one future ticket
-                    elif not ticket_status.get("ongoing") and len(ticket_status.get("future", [])) == 1:
-                        ticket = ticket_status["future"][0]
-                        trip_id = ticket.get("tripId")
-                        api_data["matched_future_ticket"] = ticket
-                        api_data["trip_id"] = trip_id
-                        print(f"Found future ticket with trip ID: {trip_id}")
-                        
-                    # If there are no ongoing or future tickets but exactly one completed ticket
-                    elif not ticket_status.get("ongoing") and not ticket_status.get("future") and len(ticket_status.get("completed", [])) == 1:
-                        ticket = ticket_status["completed"][0]
-                        trip_id = ticket.get("tripId")
-                        api_data["matched_completed_ticket"] = ticket
-                        api_data["feedback_data"] = ticket.get("feedback_data", {})
-                        print(f"Found completed ticket with trip ID: {trip_id}")
-            
-            # If we have a trip ID but no ticket match yet, fetch ETA data directly
-            if trip_id and not api_data.get("matched_ongoing_ticket") and not api_data.get("matched_future_ticket") and not api_data.get("matched_completed_ticket"):
-                print(f"Fetching ETA data for trip ID: {trip_id}")
-                try:
-                    eta_url = f"https://api.freshbus.com/eta-data?id={trip_id}"
-                    
-                    async with self.http_session.get(eta_url) as eta_response:
-                        if eta_response.status == 200:
-                            eta_data = await eta_response.json()
-                            api_data["eta_data"] = eta_data
-                            api_data["trip_id"] = trip_id
-                            print(f"ETA data fetched: {eta_data}")
+                        if trip_id:
+                            # Format as JSON for consistent frontend display
+                            api_data["tracking"] = {
+                                "type": "active_ticket",
+                                "ticket": active_ticket,
+                                "tripId": trip_id,
+                                "from": active_ticket.get("source", "Unknown"),
+                                "to": active_ticket.get("destination", "Unknown"),
+                                "journeyDate": active_ticket.get("journeyDate", "Unknown"),
+                                "eta": active_ticket.get("eta_data", {})
+                            }
                             
-                            # If trip has ended, immediately get feedback data
-                            if eta_data.get("message") == "This trip has ended" and user_authenticated and auth_token:
-                                try:
-                                    # Use the base URL directly
-                                    feedback_url = f"{self.BASE_URL}/tickets/feedbackQuestions"
-                                    print(f"Fetching feedback for ended trip: {feedback_url}")
-                                    
-                                    headers = {
-                                        "Authorization": f"Bearer {auth_token}",
-                                        "Content-Type": "application/json"
-                                    }
-                                    
-                                    async with self.http_session.get(feedback_url, headers=headers) as fb_response:
-                                        print(f"Feedback response status: {fb_response.status}")
-                                        
-                                        if fb_response.status == 200:
-                                            feedback_data = await fb_response.json()
-                                            print(f"Feedback data received: {feedback_data}")
-                                            
-                                            # Use the whole feedback data
-                                            api_data["feedback_data"] = feedback_data
-                                            
-                                            # Also find specific trip feedback if available
-                                            trip_feedback = next((fb for fb in feedback_data if str(fb.get("tripId")) == str(trip_id)), None)
-                                            if trip_feedback:
-                                                api_data["trip_feedback"] = trip_feedback
-                                        else:
-                                            error_text = await fb_response.text()
-                                            print(f"Error fetching feedback: {fb_response.status}, {error_text}")
-                                            api_data["feedback_data"] = {"message": f"Could not fetch feedback questions: {error_text}"}
-                                except Exception as fb_err:
-                                    print(f"Exception fetching feedback: {fb_err}")
-                                    api_data["feedback_data"] = {"message": f"Error: {str(fb_err)}"}
-                        else:
-                            error_text = await eta_response.text()
-                            print(f"Error fetching ETA data: {eta_response.status}, {error_text}")
-                            api_data["eta_error"] = error_text
-                except Exception as eta_err:
-                    print(f"Exception fetching ETA data: {eta_err}")
-                    api_data["eta_error"] = str(eta_err)
-        
-        # If it's not a tracking request or we couldn't find any tracking data, proceed with regular bus booking flows
-        if source and destination:
-            journey_date = self.parse_date(query)
-            if journey_date:
-                context['last_date'] = journey_date
+                            # Get ETA data if not already present
+                            if not active_ticket.get("eta_data"):
+                                eta_data = await self.fetch_eta_data(trip_id)
+                                active_ticket["eta_data"] = eta_data
+                                api_data["tracking"]["eta"] = eta_data
+                    
+                    # If no active but completed tickets, look for NPS data
+                    elif processed_tickets["completed"]:
+                        # Use the most recent completed ticket
+                        completed_ticket = processed_tickets["completed"][0]
+                        trip_id = completed_ticket.get("tripId")
+                        
+                        if trip_id:
+                            # Get NPS data if not already present
+                            if not completed_ticket.get("nps_data"):
+                                nps_data = await self.fetch_nps_data(trip_id, auth_token)
+                                completed_ticket["nps_data"] = nps_data
+                            
+                            # Format NPS data as JSON
+                            nps_json = self.format_nps_data_as_json(
+                                completed_ticket.get("nps_data", {}),
+                                trip_id
+                            )
+                            
+                            api_data["tracking"] = {
+                                "type": "completed_ticket",
+                                "ticket": completed_ticket,
+                                "tripId": trip_id,
+                                "from": completed_ticket.get("source", "Unknown"),
+                                "to": completed_ticket.get("destination", "Unknown"),
+                                "journeyDate": completed_ticket.get("journeyDate", "Unknown"),
+                                "nps": nps_json
+                            }
+                    
+                    # If only future tickets, show the earliest one
+                    elif processed_tickets["future"]:
+                        future_ticket = processed_tickets["future"][0]
+                        trip_id = future_ticket.get("tripId")
+                        
+                        if trip_id:
+                            api_data["tracking"] = {
+                                "type": "future_ticket",
+                                "ticket": future_ticket,
+                                "tripId": trip_id,
+                                "from": future_ticket.get("source", "Unknown"),
+                                "to": future_ticket.get("destination", "Unknown"),
+                                "journeyDate": future_ticket.get("journeyDate", "Unknown")
+                            }
+                else:
+                    # No tickets found
+                    api_data["tracking"] = {
+                        "type": "no_tickets",
+                        "message": "No tickets found for your account"
+                    }
+            else:
+                # User not authenticated
+                api_data["tracking"] = {
+                    "type": "not_authenticated",
+                    "message": "Please log in to track your bus"
+                }
+                
+        elif user_authenticated and (
+            "profile" in query.lower() or 
+            "my account" in query.lower() or 
+            "my details" in query.lower()
+        ):
+            # Handle profile requests
+            print("User profile request detected")
             
-            source_id = self.stations.get(source)
-            destination_id = self.stations.get(destination)
+            # If user profile not cached or expired, fetch it
+            if not context.get('user_profile'):
+                user_profile = await self.fetch_user_profile(auth_token)
+                if user_profile:
+                    context['user_profile'] = user_profile
+                    api_data["user_profile"] = user_profile
+                    print("Fetched user profile")
+            else:
+                api_data["user_profile"] = context.get('user_profile')
+                print("Using cached user profile")
+        
+        # Handle standard bus booking flows
+        elif context.get('user_requested_source') and context.get('user_requested_destination'):
+            source_id = self.stations.get(context['user_requested_source'])
+            destination_id = self.stations.get(context['user_requested_destination'])
             
             if source_id and destination_id:
-                # Try to fetch trips with user's requested direction
-                trips_data = await self.fetch_trips(source_id, destination_id, journey_date)
+                # Check if looking for nearby boarding points
+                looking_for_boarding = any(phrase in query.lower() for phrase in ["boarding", "pickup", "pick up", "board", "pick-up", "station", "stop", "nearby", "close", "nearest"])
                 
-                # If no trips found, try the reverse direction
-                if not trips_data or len(trips_data) == 0:
-                    print(f"No trips found FROM {source} TO {destination}, trying reverse direction")
-                    trips_data = await self.fetch_trips(destination_id, source_id, journey_date)
+                # Check if looking for dropping points
+                looking_for_dropping = any(phrase in query.lower() for phrase in ["dropping", "drop", "drop-off", "drop off", "destination"])
+                
+                # Check if looking for seat selection
+                looking_for_seats = any(phrase in query.lower() for phrase in ["seat", "where", "sit", "book", "select", "window", "aisle"])
+                
+                # Get user's selected trip from context or detect from query
+                selected_trip = context.get('selected_bus')
+                
+                # If user doesn't have a selected trip but we have trips data, try to detect
+                if not selected_trip and 'last_trips' in context:
+                    trips = context['last_trips']
+                    selected_trip_index = self.detect_bus_selection(query, trips)
+                    if selected_trip_index is not None:
+                        selected_trip = trips[selected_trip_index]
+                        context['selected_bus'] = selected_trip
+                        print(f"Detected bus selection: {selected_trip_index}")
+                
+                # Check trip selection or seat selection in query
+                if not selected_trip and not api_data.get("trips"):
+                    # If no trips yet, fetch them
+                    date = context.get('last_date', self.parse_date(query))
+                    trips = await self.fetch_trips(source_id, destination_id, date)
                     
-                    # If trips found in reverse direction, add a flag to indicate we need to swap
-                    if trips_data and len(trips_data) > 0:
-                        print(f"Found trips in reverse direction FROM {destination} TO {source}")
-                        context['reverse_direction'] = True
+                    if trips:
+                        # Process trips as normal
+                        api_data["trips"] = trips
+                        context['last_trips'] = trips
+                        
+                        # Add user direction to API data
                         api_data["user_direction"] = {
-                            "source": source,
-                            "destination": destination,
-                            "swap_points": True  # Flag to swap boarding/dropping points
+                            "source": context['user_requested_source'],
+                            "destination": context['user_requested_destination'],
+                            "swap_points": False  # Never swap points for initial search
                         }
+                        
+                        # If user has a location, find nearest boarding points
+                        if context.get('user_location'):
+                            boarding_points = []
+                            
+                            # Check all trips and aggregate boarding points
+                            for trip in trips:
+                                trip_boarding_points = await self.fetch_boarding_points(trip.get('tripid'), source_id)
+                                boarding_points.extend(trip_boarding_points)
+                            
+                            if boarding_points:
+                                api_data["boarding_points"] = boarding_points
+                                
+                                # Get nearest boarding points
+                                nearest_points = self.get_nearest_boarding_points_info(
+                                    boarding_points, 
+                                    context['user_location'],
+                                    max_points=3
+                                )
+                                
+                                if nearest_points:
+                                    api_data["nearest_boarding_points"] = nearest_points
+                    else:
+                        # Handle case when no trips are found
+                        # Try reversing the direction
+                        print(f"No trips found from {context['user_requested_source']} to {context['user_requested_destination']}, trying reverse direction")
+                        reverse_trips = await self.fetch_trips(destination_id, source_id, date)
+                        
+                        if reverse_trips:
+                            print(f"Found {len(reverse_trips)} trips in reverse direction")
+                            
+                            # Store the trips with a note about reversed direction
+                            api_data["trips"] = reverse_trips
+                            context['last_trips'] = reverse_trips
+                            api_data["direction_reversed"] = True
+                            
+                            # Add user direction to API data, with swap_points=True
+                            api_data["user_direction"] = {
+                                "source": context['user_requested_source'],
+                                "destination": context['user_requested_destination'],
+                                "swap_points": True  # Swap points since direction is reversed
+                            }
+                        else:
+                            # No trips found in either direction
+                            source_name = context['user_requested_source'].capitalize()
+                            destination_name = context['user_requested_destination'].capitalize()
+                            travel_date = date
+                            
+                            formatted_date = datetime.fromisoformat(travel_date).strftime("%A, %B %d, %Y")
+                            
+                            # Provide a helpful message about no trips
+                            no_trips_message = f"I'm sorry, I couldn't find any buses from {source_name} to {destination_name} on {formatted_date}. This could be due to:"
+                            no_trips_message += "\n\n1. No available services on this route for the selected date"
+                            no_trips_message += "\n2. All buses being fully booked"
+                            no_trips_message += "\n3. A temporary issue with our booking system"
+                            
+                            no_trips_message += "\n\nYou could try:"
+                            no_trips_message += f"\n• Checking a different date"
+                            no_trips_message += f"\n• Looking for buses to nearby destinations"
+                            no_trips_message += f"\n• Checking again in a few minutes if it's a temporary issue"
+                            
+                            # Set api_data with route information but no trips
+                            api_data["no_trips_info"] = {
+                                "source": source_name,
+                                "destination": destination_name,
+                                "date": formatted_date,
+                                "message": no_trips_message
+                            }
                 
-                # Make sure we're working with deduplicated trips
-                trips_data = self.deduplicate_trips(trips_data)
-                print(f"Processing {len(trips_data)} unique trips")
-                
-                api_data["trips"] = trips_data
-                
-                selected_bus_index = self.detect_bus_selection(query, trips_data)
-                if trips_data and len(trips_data) > 0:
-                    trip_index = selected_bus_index if selected_bus_index is not None else 0
-                    if selected_bus_index is not None:
-                        context['selected_bus'] = trips_data[trip_index].get('servicenumber')
+                # If user selected a specific trip and is asking about boarding/dropping points
+                if selected_trip:
+                    trip_id = selected_trip.get('tripid')
                     
-                    trip_id = trips_data[trip_index]["tripid"]
+                    # Only fetch if not already in context
+                    if looking_for_boarding and not api_data.get("boarding_points"):
+                        boarding_points = await self.fetch_boarding_points(trip_id, source_id)
+                        if boarding_points:
+                            api_data["boarding_points"] = boarding_points
+                            
+                            # If user has location, also get nearest boarding points
+                            if context.get('user_location'):
+                                nearest_points = self.get_nearest_boarding_points_info(
+                                    boarding_points, 
+                                    context['user_location'],
+                                    max_points=3
+                                )
+                                
+                                if nearest_points:
+                                    api_data["nearest_boarding_points"] = nearest_points
+                                    
+                                # Suggest the nearest boarding point if available
+                                suggestion = self.suggest_boarding_point(
+                                    boarding_points,
+                                    context.get('user_location'),
+                                    context.get('last_boarding_point')
+                                )
+                                
+                                if suggestion:
+                                    api_data["suggested_boarding"] = suggestion
+                                    context['last_boarding_point'] = suggestion
                     
-                    # Get IDs for API calls based on the direction of the found trips
-                    api_source_id = source_id
-                    api_destination_id = destination_id
+                    # Only fetch if not already in context
+                    if looking_for_dropping and not api_data.get("dropping_points"):
+                        dropping_points = await self.fetch_dropping_points(trip_id)
+                        if dropping_points:
+                            api_data["dropping_points"] = dropping_points
+                            
+                            # Suggest a dropping point
+                            suggestion = self.suggest_dropping_point(
+                                dropping_points,
+                                context.get('last_dropping_point')
+                            )
+                            
+                            if suggestion:
+                                api_data["suggested_dropping"] = suggestion
+                                context['last_dropping_point'] = suggestion
                     
-                    # If we're using reverse direction trips, swap the IDs for API calls
-                    if context.get('reverse_direction'):
-                        api_source_id, api_destination_id = destination_id, source_id
+                    # Only fetch if not already in context
+                    if looking_for_seats and not api_data.get("recommendations"):
+                        seats_data = await self.fetch_seats(trip_id, source_id, destination_id)
+                        if seats_data:
+                            # Get user preferences (either from auth or session)
+                            user_preferences = None
+                            
+                            # If user is authenticated and mobile number available
+                            if user_authenticated and user_mobile:
+                                user_preferences = await self.fetch_user_preferences(user_mobile, auth_token)
+                                api_data["user_preferences"] = user_preferences
+                            
+                            # Get recommendations
+                            recommendations = self.get_seat_recommendations(
+                                seats_data, 
+                                context.get('ticket_count', 1),
+                                user_preferences
+                            )
+                            
+                            if recommendations:
+                                api_data["recommendations"] = recommendations
                     
-                    # Fetch boarding, dropping and seats concurrently
-                    tasks = [
-                        self.fetch_boarding_points(trip_id, api_source_id),
-                        self.fetch_dropping_points(trip_id),
-                        self.fetch_seats(trip_id, api_source_id, api_destination_id)
-                    ]
-                    boarding_points, dropping_points, seats_data = await asyncio.gather(*tasks)
-                    
-                    api_data["boarding_points"] = boarding_points
-                    user_loc = context.get('user_location')
-                    if user_loc:
-                        nearest_points = self.get_nearest_boarding_points_info(boarding_points, user_loc, max_points=3)
-                        api_data["nearest_boarding_points"] = nearest_points
-                    
-                    suggested_boarding = self.suggest_boarding_point(boarding_points, user_loc, context.get('last_boarding_point'))
-                    api_data["suggested_boarding"] = suggested_boarding
-                    
-                    api_data["dropping_points"] = dropping_points
-                    suggested_dropping = self.suggest_dropping_point(dropping_points, context.get('last_dropping_point'))
-                    api_data["suggested_dropping"] = suggested_dropping
-                    
-                    api_data["seats"] = seats_data
-                    
-                    # If user is authenticated, fetch their preferences
-                    user_preferences = None
-                    if user_authenticated and user_mobile:
-                        user_preferences = await self.fetch_user_preferences(user_mobile, auth_token)
-                        api_data["user_preferences"] = user_preferences
-                    
-                    # Get seat recommendations with user preferences if available
-                    recommendations = self.get_seat_recommendations(
-                        seats_data, 
-                        context.get('ticket_count', 1),
-                        user_preferences
-                    )
-                    api_data["recommendations"] = recommendations
-                    
+                    # Handle seat selection
                     seats, window_pref, aisle_pref = self.detect_seat_selection(query)
                     if seats:
                         context['selected_seats'] = seats
@@ -2523,7 +3407,7 @@ class FreshBusAssistant:
                     
                     api_data["window_preference"] = window_pref
                     api_data["aisle_preference"] = aisle_pref
-        
+
         api_data["ticket_count"] = context.get('ticket_count', 1)
         
         # Pass user's requested direction to api_data if needed
@@ -2600,7 +3484,8 @@ class FreshBusAssistant:
         # Check if this is a bus listing request and we have trip data
         is_bus_listing_request = any(kw in query.lower() for kw in ["book", "find", "search", "trip", "bus", "ticket"])
         
-        if is_bus_listing_request and api_data and api_data.get("trips"):
+        # Only use direct response for real bus queries, not simple ones
+        if is_bus_listing_request and api_data and api_data.get("trips") and not is_simple_query:
             # Use direct response generation for bus listings
             print("Using direct bus response generator to avoid hallucinations")
             direct_response = self.generate_direct_bus_response(api_data, context)
@@ -2681,6 +3566,16 @@ class FreshBusAssistant:
         
         # Add explicit time conversion instruction
         system_message += "\n\nTIME CONVERSION: All times must be converted from UTC to IST by adding 5 hours and 30 minutes."
+        
+        # Special handling for simple queries
+        if is_simple_query:
+            system_message += "\n\n--- SIMPLE QUERY HANDLING ---\n"
+            system_message += "This is a simple greeting or identity question. Respond in a friendly manner."
+            
+            if "name" in query.lower():
+                system_message += "\nRemember to state that your name is Ṧ.AI (pronounced 'Sai') and you are the Fresh Bus travel assistant."
+            elif query.lower() in ["hi", "hello", "hey"]:
+                system_message += "\nRespond with a friendly greeting and offer to help with bus-related questions."
         
         # Add user authentication info if available
         if user_authenticated:
@@ -2780,28 +3675,46 @@ class FreshBusAssistant:
         if is_tracking_request:
             system_message += "\n\nTRACKING REQUEST REMINDER: The user is asking about bus location/ETA. Focus your response on providing tracking information from the context. If no tracking data is available, suggest providing a Trip ID or logging in to see active tickets."
         
-        token_count = self.vector_db.get_token_count(system_message)
-        print(f"System message token count: {token_count}")
+        # Track token counts for cost tracking
+        input_tokens = 0
+        try:
+            # Count system message tokens
+            input_tokens += await self.ai_provider.count_tokens(system_message)
+            
+            # Count message history tokens
+            for msg in session['messages']:
+                input_tokens += await self.ai_provider.count_tokens(msg.get("content", ""))
+        except Exception as token_err:
+            print(f"Error counting input tokens: {token_err}")
+            input_tokens = 0  # Reset if there's an error
+        
+        print(f"System message token count: {input_tokens}")
         recent_messages = session['messages'][-3:]
         
         try:
-            # Set a longer timeout and implement retry logic
-            max_retries = 2
-            for attempt in range(max_retries):
-                try:
-                    with anthropic_client.messages.stream(
-                        model="claude-3-5-sonnet-20240620",
-                        max_tokens=2000,
-                        system=system_message,
-                        messages=recent_messages,
-                        timeout=45  # Increased timeout
-                    ) as stream:
-                        response_text = ""
-                        for text in stream.text_stream:
-                            response_text += text
-                            yield json.dumps({"text": text, "done": False})
+            # Generate response using the AI provider abstraction
+            response_text = ""
+            
+            print(f"Sending to {self.ai_provider.provider_name} with system message length: {len(system_message)}")
+            print(f"First 100 chars of system message: {system_message[:100]}...")
+            
+            async for chunk in self.ai_provider.generate_stream(
+                prompt=query,
+                system_message=system_message,
+                messages=recent_messages,
+                max_tokens=2000,
+                temperature=0.7
+            ):
+                if "error" in chunk:
+                    error_msg = f"Error with {self.ai_provider.provider_name} API: {chunk['error']}"
+                    print(error_msg)
+                    raise Exception(error_msg)
+                
+                if chunk.get("done", False):
+                    if "complete_response" in chunk:
+                        response_text = chunk["complete_response"]
                         
-                        # Remove any "CORRECTION:" text and enforce proper format
+                        # Process the complete response
                         corrected_response = self.enforce_response_format(response_text, api_data, context)
                         
                         # If the response was modified
@@ -2810,6 +3723,29 @@ class FreshBusAssistant:
                             yield json.dumps({"text": corrected_response, "replace": True, "done": False})
                         
                         session['messages'].append({"role": "assistant", "content": response_text})
+                        
+                        # Track output tokens for cost tracking
+                        output_tokens = 0
+                        try:
+                            output_tokens = await self.ai_provider.count_tokens(response_text)
+                        except Exception as token_err:
+                            print(f"Error counting output tokens: {token_err}")
+                        
+                        # Log usage for cost tracking
+                        provider_name = self.ai_provider.provider_name
+                        model_name = self.ai_provider.model
+                        
+                        usage_data = self.cost_tracker.log_request(
+                            provider=provider_name,
+                            model=model_name,
+                            input_tokens=input_tokens,
+                            output_tokens=output_tokens,
+                            session_id=session_id or "unknown",
+                            query_type="chat"
+                        )
+                        
+                        print(f"Request cost: ${usage_data['total_cost']:.5f} " + 
+                            f"({usage_data['input_tokens']} input + {usage_data['output_tokens']} output tokens)")
                         
                         # Save conversation to Redis if available
                         try:
@@ -2827,46 +3763,107 @@ class FreshBusAssistant:
                             "language_style": context.get('language', 'english'),
                             "conversation_id": conversation_id
                         })
-                        
-                        # Successful response - exit retry loop
-                        break
-                        
-                except Exception as retry_err:
-                    print(f"Claude API attempt {attempt+1}/{max_retries} failed: {str(retry_err)}")
-                    if attempt < max_retries - 1:
-                        # Wait before retrying with exponential backoff
-                        await asyncio.sleep(2 ** attempt)
                     else:
-                        # All retries failed, use fallback
-                        raise retry_err
-                        
+                        # Just final done signal without complete text
+                        yield json.dumps({
+                            "text": "", 
+                            "done": True, 
+                            "session_id": session_id, 
+                            "language_style": context.get('language', 'english')
+                        })
+                else:
+                    # Stream text chunks
+                    yield json.dumps({"text": chunk["text"], "done": False})
+                    
         except Exception as e:
-            error_msg = f"Error with Claude API: {str(e)}"
+            error_msg = f"Error with {self.ai_provider.provider_name} API: {str(e)}"
             print(error_msg)
             
-            # Use fallback response mechanism
-            fallback_response = self._generate_fallback_response(api_data, query, context)
-            print("Using fallback response mechanism")
-            session['messages'].append({"role": "assistant", "content": fallback_response})
+            # Handle the case when we have bus data but the AI call failed
+            if api_data and api_data.get("trips") and context.get('user_requested_source') and context.get('user_requested_destination'):
+                direct_response = self.generate_direct_bus_response(api_data, context)
+                print("Using direct bus response generation due to AI API error")
+                session['messages'].append({"role": "assistant", "content": direct_response})
+                
+                # Try to save to Redis
+                try:
+                    conversation_id = conversation_manager.save_conversation(session_id, session['messages'])
+                    if conversation_id:
+                        print(f"Saved direct response to Redis: {conversation_id}")
+                except Exception as redis_err:
+                    print(f"Failed to save to Redis: {redis_err}")
+                    conversation_id = None
+                
+                yield json.dumps({"text": direct_response, "done": False})
+                yield json.dumps({
+                    "text": "", 
+                    "done": True, 
+                    "session_id": session_id,
+                    "language_style": context.get('language', 'english'),
+                    "conversation_id": conversation_id
+                })
+                return
             
-            # Try to save to Redis even with fallback
-            try:
-                conversation_id = conversation_manager.save_conversation(session_id, session['messages'])
-                if conversation_id:
-                    print(f"Saved fallback conversation to Redis with ID: {conversation_id}")
-            except Exception as redis_err:
-                print(f"Failed to save fallback to Redis: {redis_err}")
-                conversation_id = None
-            
-            # Return the fallback response
-            yield json.dumps({"text": fallback_response, "done": False})
-            yield json.dumps({
-                "text": "", 
-                "done": True, 
-                "session_id": session_id,
-                "language_style": context.get('language', 'english'),
-                "conversation_id": conversation_id
-            })
+            # Special handling for simple queries
+            if is_simple_query:
+                # For simple queries that don't need API data, give simple responses
+                if "name" in query.lower():
+                    simple_response = "My name is Ṧ.AI (pronounced 'Sai'). I'm your Fresh Bus travel assistant. How can I help you today?"
+                else:
+                    simple_response = "Hello! I'm Ṧ.AI, your Fresh Bus travel assistant. How can I help you with your bus travel today?"
+                    
+                session['messages'].append({"role": "assistant", "content": simple_response})
+                
+                # Try to save to Redis
+                try:
+                    conversation_id = conversation_manager.save_conversation(session_id, session['messages'])
+                    if conversation_id:
+                        print(f"Saved simple response to Redis: {conversation_id}")
+                except Exception as redis_err:
+                    print(f"Failed to save to Redis: {redis_err}")
+                    conversation_id = None
+                    
+                yield json.dumps({"text": simple_response, "done": False})
+                yield json.dumps({
+                    "text": "", 
+                    "done": True, 
+                    "session_id": session_id,
+                    "language_style": context.get('language', 'english'),
+                    "conversation_id": conversation_id
+                })
+            else:
+                # Use fallback response mechanism for complex queries or when specific API data is needed
+                fallback_response = self._generate_fallback_response(api_data, query, context)
+                print("Using fallback response mechanism due to API error")
+                session['messages'].append({"role": "assistant", "content": fallback_response})
+                
+                # Try to save to Redis even with fallback
+                try:
+                    conversation_id = conversation_manager.save_conversation(session_id, session['messages'])
+                    if conversation_id:
+                        print(f"Saved fallback conversation to Redis: {conversation_id}")
+                except Exception as redis_err:
+                    print(f"Failed to save to Redis: {redis_err}")
+                    conversation_id = None
+                
+                # Return the fallback response
+                yield json.dumps({"text": fallback_response, "done": False})
+                yield json.dumps({
+                    "text": "", 
+                    "done": True, 
+                    "session_id": session_id,
+                    "language_style": context.get('language', 'english'),
+                    "conversation_id": conversation_id
+                })
+        finally:
+            # Restore original provider if we made a temporary switch
+            if original_provider:
+                # Clean up temporary provider
+                await self.ai_provider.cleanup()
+                
+                # Restore original
+                self.ai_provider = original_provider
+                print(f"Restored original provider: {self.ai_provider.provider_name} {self.ai_provider.model}")
 
 # Instantiate the Fresh Bus assistant
 fresh_bus_assistant = FreshBusAssistant()
@@ -2889,6 +3886,66 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 #################################
 # API Endpoints
 #################################
+
+@app.get("/api/models")
+async def get_available_models():
+    """Get list of available AI models."""
+    return JSONResponse(content=AIProviderFactory.get_available_providers())
+
+@app.get("/api/current-model")
+async def get_current_model():
+    """Get the currently active model."""
+    return JSONResponse(content={
+        "provider": fresh_bus_assistant.ai_provider.provider_name.lower(),
+        "model": fresh_bus_assistant.ai_provider.model,
+        "display_name": AIProviderFactory.MODEL_DISPLAY_NAMES.get(
+            fresh_bus_assistant.ai_provider.model, 
+            fresh_bus_assistant.ai_provider.model
+        )
+    })
+
+@app.post("/api/select-model")
+async def select_model(selection: ModelSelectionRequest):
+    """Change the AI model being used."""
+    try:
+        # Create the new provider
+        new_provider = AIProviderFactory.create_provider(
+            provider_name=selection.provider,
+            model=selection.model
+        )
+        
+        # Initialize it
+        await new_provider.initialize()
+        
+        # Clean up old provider
+        await fresh_bus_assistant.ai_provider.cleanup()
+        
+        # Swap provider
+        old_provider = fresh_bus_assistant.ai_provider.provider_name
+        old_model = fresh_bus_assistant.ai_provider.model
+        fresh_bus_assistant.ai_provider = new_provider
+        
+        # Log the change
+        print(f"Model changed from {old_provider} {old_model} to {selection.provider} {selection.model}")
+        
+        return {
+            "success": True, 
+            "message": f"Changed to {selection.provider} {selection.model}",
+            "provider": selection.provider,
+            "model": selection.model,
+            "display_name": AIProviderFactory.MODEL_DISPLAY_NAMES.get(selection.model, selection.model)
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to change model: {str(e)}"
+        )
+
+@app.get("/admin/costs/today")
+async def get_today_costs():
+    """Get today's AI usage costs."""
+    summary = fresh_bus_assistant.cost_tracker.get_daily_summary()
+    return JSONResponse(content=summary)
 
 @app.get("/trip-feedback/{trip_id}")
 async def get_trip_feedback(trip_id: str, request: Request):
@@ -3015,6 +4072,40 @@ async def get_user_tickets(request: Request):
             content={"message": f"Error fetching tickets: {str(e)}"}
         )
 
+@app.get("/user/active-tickets")
+async def get_active_tickets(request: Request):
+    """Get active tickets for the authenticated user"""
+    try:
+        # Get the auth token from the request headers
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return JSONResponse(
+                status_code=401,
+                content={"success": False, "message": "Authentication required"}
+            )
+        
+        auth_token = auth_header.replace("Bearer ", "")
+        
+        # Fetch tickets
+        tickets = await fresh_bus_assistant.fetch_user_tickets(auth_token, force_refresh=True)
+        
+        if not tickets:
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "message": "No tickets found"}
+            )
+        
+        # Process tickets
+        processed_tickets = await fresh_bus_assistant.process_user_tickets(tickets)
+        
+        return JSONResponse(content=processed_tickets)
+    except Exception as e:
+        print(f"Error getting active tickets: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"Error fetching tickets: {str(e)}"}
+        )
+
 @app.get("/tickets/feedbackQuestions")
 async def get_feedback_questions(request: Request):
     """Get feedback questions for completed journeys"""
@@ -3057,6 +4148,45 @@ async def get_feedback_questions(request: Request):
         return JSONResponse(
             status_code=500, 
             content={"message": f"Error fetching feedback questions: {str(e)}"}
+        )
+
+@app.get("/tracking/{trip_id}")
+async def get_bus_tracking(trip_id: str, request: Request):
+    """Get live tracking for a specific trip"""
+    try:
+        # Fetch ETA data
+        eta_data = await fresh_bus_assistant.fetch_eta_data(trip_id)
+        
+        if not eta_data:
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "message": "No tracking data found"}
+            )
+        
+        # Format ETA data as JSON
+        eta_json = fresh_bus_assistant.format_eta_data_as_json(eta_data, trip_id)
+        
+        # Check if this is a completed trip
+        if eta_json["status"] == "completed":
+            # Get auth token from headers
+            auth_header = request.headers.get("Authorization")
+            if auth_header and auth_header.startswith("Bearer "):
+                auth_token = auth_header.replace("Bearer ", "")
+                
+                # Fetch NPS data for completed trips
+                nps_data = await fresh_bus_assistant.fetch_nps_data(trip_id, auth_token)
+                
+                # Add NPS data to response
+                if nps_data:
+                    nps_json = fresh_bus_assistant.format_nps_data_as_json(nps_data, trip_id)
+                    eta_json["nps"] = nps_json
+        
+        return JSONResponse(content=eta_json)
+    except Exception as e:
+        print(f"Error getting bus tracking: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"Error fetching tracking data: {str(e)}"}
         )
 
 @app.get("/profile")
@@ -3346,19 +4476,60 @@ async def query(request: Request, response: Response):
             query_str = request.query_params.get("query")
             session_id = request.query_params.get("session_id", "")
             gender = request.query_params.get("gender")
+            provider = request.query_params.get("provider")
+            model = request.query_params.get("model")
+            
             if not query_str:
                 raise HTTPException(status_code=400, detail="No query provided")
+                
             query_request = QueryRequest(
                 query=query_str,
                 session_id=session_id,
-                gender=gender
+                gender=gender,
+                provider=provider,
+                model=model
             )
         else:
             try:
                 body = await request.json()
-                # Add debug logging for location data
-                if 'location' in body and body['location']:
-                    print(f"Location data received: {body['location']}")
+                
+                # Check if this is a silent model switch request
+                is_silent = body.get('silent', False)
+                special_command = body.get('query') == "_model_switch_"
+                
+                if is_silent and special_command:
+                    # Handle silent model switch
+                    provider = body.get('provider')
+                    model = body.get('model')
+                    session_id = body.get('session_id')
+                    
+                    if provider and model:
+                        # Create a new provider
+                        new_provider = AIProviderFactory.create_provider(
+                            provider_name=provider,
+                            model=model
+                        )
+                        
+                        # Initialize it
+                        await new_provider.initialize()
+                        
+                        # Cleanup old provider
+                        await fresh_bus_assistant.ai_provider.cleanup()
+                        
+                        # Set the new provider
+                        fresh_bus_assistant.ai_provider = new_provider
+                        
+                        # Store the session's current provider if needed
+                        if session_id:
+                            session, _ = fresh_bus_assistant.get_or_create_session(session_id)
+                            session['provider'] = provider
+                            session['model'] = model
+                        
+                        # Return empty success response
+                        return StreamingResponse(
+                            iter(["data: {\"success\": true}\n\n"]), 
+                            media_type="text/event-stream"
+                        )
                 
                 # Extract auth data if present
                 auth_data = None
@@ -3389,7 +4560,9 @@ async def query(request: Request, response: Response):
                 query_request.session_id,
                 user_gender=query_request.gender,
                 user_location=query_request.location,
-                detected_language=detected_language
+                detected_language=detected_language,
+                provider=query_request.provider,
+                model=query_request.model
             ):
                 yield f"data: {chunk}\n\n"
                 try:
