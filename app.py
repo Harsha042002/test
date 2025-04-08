@@ -26,20 +26,12 @@ import atexit
 # Import the custom AI provider modules
 from ai_providers import AIProviderFactory, AIProvider
 from ai_cost_tracker import AICostTracker
+from config import Config
 
 load_dotenv()
 
-# Updated Redis configuration using Upstash
-REDIS_HOST = 'tops-buffalo-19522.upstash.io'
-REDIS_PORT = 6379
-REDIS_PASSWORD = 'AUxCAAIjcDFjZGUyYmMyYWI2ZWU0YzE5Yjg5NDBiYWU5ZWE0ZWIxNXAxMA'
-redis_client = redis.Redis(
-    host=REDIS_HOST,
-    port=REDIS_PORT,
-    password=REDIS_PASSWORD,
-    decode_responses=True,
-    ssl=True
-)
+# Initialize Redis client using configuration
+redis_client = redis.Redis(**Config.get_redis_config())
 
 # Define lifespan context manager
 @asynccontextmanager
@@ -52,11 +44,11 @@ async def lifespan(app: FastAPI):
 
 # Initialize external clients and tokenizers
 anthropic_client = Anthropic(
-    api_key=os.getenv("ANTHROPIC_API_KEY"),
+    api_key=Config.ANTHROPIC_API_KEY,
     timeout=45  # Set a longer timeout for all requests
 )
-voyage_api_key = os.getenv("VOYAGE_API_KEY")
-chroma_client = chromadb.Client()
+voyage_api_key = Config.VOYAGE_API_KEY
+chroma_client = chromadb.PersistentClient(path=Config.CHROMA_DB_PATH)
 tokenizer = tiktoken.get_encoding("cl100k_base")  # Claude's encoding
 
 # Request models
@@ -91,20 +83,9 @@ class ConversationDetail(BaseModel):
     timestamp: str
     messages: List[Dict[str, str]]
 
-# Language codes mapping for Fireworks API
-LANGUAGE_CODES = {
-    "english": "en",
-    "hindi": "hi",
-    "telugu": "te",
-    "kannada": "kn",
-    "tamil": "ta",
-    "malayalam": "ml",
-    "tenglish": "te",
-    "hinglish": "hi",
-    "tanglish": "ta",
-    "kanglish": "kn"
-}
-LANGUAGE_CODES_REVERSE = {v: k for k, v in LANGUAGE_CODES.items()}
+# Use language codes from config
+LANGUAGE_CODES = Config.LANGUAGE_CODES
+LANGUAGE_CODES_REVERSE = Config.LANGUAGE_CODES_REVERSE
 
 #################################
 # Redis Conversation Manager
@@ -416,44 +397,49 @@ class VectorDBManager:
     async def get_system_prompt(self, query, collection_name="system_prompts"):
         query_lower = query.lower()
         
-        # Check for simple queries to prioritize identity and greeting info
-        if query_lower in ["hi", "hello", "hey"] or "name" in query_lower or "who" in query_lower:
-            # First look for assistant identity sections
-            identity_results = await self.query_collection(
-                collection_name, 
-                "assistant identity name", 
-                n_results=2
-            )
-            
-            # If we have identity results, prioritize them
-            if identity_results and identity_results.get("documents"):
-                docs = identity_results.get("documents")
-                if isinstance(docs[0], list):
-                    docs = [doc for sublist in docs for doc in sublist]
+        try:
+            # Check for simple queries to prioritize identity and greeting info
+            if query_lower in ["hi", "hello", "hey"] or "name" in query_lower or "who" in query_lower:
+                # First look for assistant identity sections
+                identity_results = await self.query_collection(
+                    collection_name, 
+                    "assistant identity name", 
+                    n_results=2
+                )
                 
-                # Add standard prompt elements
-                standard_prompt = "You are a Fresh Bus travel assistant. Provide accurate bus information based on API data only."
-                return standard_prompt + "\n\n" + "\n\n".join(docs)
-        
-        # Regular query processing
-        results = await self.query_collection(collection_name, query, n_results=5)
-        if not results or not results["documents"]:
+                # If we have identity results, prioritize them
+                if identity_results and identity_results.get("documents"):
+                    docs = identity_results.get("documents")
+                    if isinstance(docs[0], list):
+                        docs = [doc for sublist in docs for doc in sublist]
+                    
+                    # Add standard prompt elements
+                    standard_prompt = "You are a Fresh Bus travel assistant. Provide accurate bus information based on API data only."
+                    return standard_prompt + "\n\n" + "\n\n".join(docs)
+            
+            # Regular query processing
+            results = await self.query_collection(collection_name, query, n_results=5)
+            if not results or not results["documents"]:
+                return "You are a Fresh Bus travel assistant. Provide accurate bus information based on API data only."
+                
+            prompt_sections = []
+            documents = results["documents"]
+            if documents and isinstance(documents[0], list):
+                documents = [doc for sublist in documents for doc in sublist]
+            elif documents and not isinstance(documents[0], str):
+                documents = [str(doc) for doc in documents]
+                
+            for doc in documents:
+                if isinstance(doc, str):
+                    prompt_sections.append(doc)
+                else:
+                    prompt_sections.append(str(doc))
+                    
+            return "\n\n".join(prompt_sections)
+        except Exception as e:
+            print(f"Error getting system prompt: {e}")
+            # Return a fallback prompt if there's an error
             return "You are a Fresh Bus travel assistant. Provide accurate bus information based on API data only."
-            
-        prompt_sections = []
-        documents = results["documents"]
-        if documents and isinstance(documents[0], list):
-            documents = [doc for sublist in documents for doc in sublist]
-        elif documents and not isinstance(documents[0], str):
-            documents = [str(doc) for doc in documents]
-            
-        for doc in documents:
-            if isinstance(doc, str):
-                prompt_sections.append(doc)
-            else:
-                prompt_sections.append(str(doc))
-                
-        return "\n\n".join(prompt_sections)
     
     async def _store_active_tickets(self, collection_name, tickets):
         """Store active tickets information in vector database"""
@@ -859,25 +845,13 @@ class VectorDBManager:
 class FreshBusAssistant:
     def __init__(self):
         self.system_prompt = ""
-        self.load_system_prompt("./system_prompt/qa_prompt.txt")
-        self.BASE_URL = "https://api-stage.freshbus.com"
-        self.BASE_URL_CUSTOMER = os.getenv("BASE_URL_CUSTOMER", "https://api-stage.freshbus.com")
-        self.stations = {
-            "hyderabad": 3,
-            "vijayawada": 5,
-            "bangalore": 7,
-            "tirupati": 12,
-            "chittoor": 130,
-            "guntur": 13
-        }
-        self.seat_categories = {
-            "Premium": [5, 8, 9, 12, 13, 16, 17, 20, 24, 25, 28],
-            "Reasonable": [1, 2, 3, 4, 6, 7, 10, 11, 14, 15, 18, 19, 21, 22, 23, 26, 27, 29, 30, 31, 32, 37, 40],
-            "Low Reasonable": [33, 34, 35, 36, 38, 39],
-            "Budget-Friendly": [41, 42, 43, 44]
-        }
-        self.window_seats = [1, 4, 5, 8, 9, 12, 13, 16, 17, 20, 21, 24, 25, 28, 29, 32, 33, 36, 37, 40, 41, 44]
-        self.aisle_seats = [2, 3, 6, 7, 10, 11, 14, 15, 18, 19, 22, 23, 26, 27, 30, 31, 34, 35, 38, 39, 42, 43]
+        self.load_system_prompt(Config.DEFAULT_SYSTEM_PROMPT_PATH)
+        self.BASE_URL = Config.BASE_URL
+        self.BASE_URL_CUSTOMER = Config.BASE_URL_CUSTOMER
+        self.stations = Config.STATIONS
+        self.seat_categories = Config.SEAT_CATEGORIES
+        self.window_seats = Config.WINDOW_SEATS
+        self.aisle_seats = Config.AISLE_SEATS
         self.sessions = {}
         self.http_session = None
         self.embeddings_client = VoyageEmbeddings(voyage_api_key)
@@ -888,9 +862,9 @@ class FreshBusAssistant:
         self.user_tickets_cache = {}
         self.user_tickets_cache_expiry = {}
         
-        # Initialize AI provider - default to Gemini with improved error handling
-        provider_name = os.getenv("AI_PROVIDER", "gemini")  # Default to Gemini
-        provider_model = os.getenv("AI_PROVIDER_MODEL", "gemini-2.0-flash")  # Default to Gemini Flash
+        # Initialize AI provider from config
+        provider_name = Config.DEFAULT_AI_PROVIDER
+        provider_model = Config.DEFAULT_AI_MODEL
         
         # Clean up provider name by removing any comments and whitespace
         if '#' in provider_name:
@@ -930,59 +904,77 @@ class FreshBusAssistant:
     
     async def init_system_prompt(self):
         if not self.system_prompt_initialized:
-            # Add additional assistant identity and capabilities information
-            identity_info = """
+            # Load identity info from a file if it exists, otherwise use default
+            identity_info_path = os.path.join(os.path.dirname(Config.DEFAULT_SYSTEM_PROMPT_PATH), "identity_info.txt")
+            identity_info = ""
             
-            ASSISTANT IDENTITY:
-            - Your name is Ṧ.AI (pronounced 'Sai')
-            - You are the Fresh Bus AI travel assistant
-            - When asked about your name or identity, always identify yourself as Ṧ.AI
-            - When asked simple greeting questions like "hi", "hello", respond with a friendly greeting
-            
-            LANGUAGE CAPABILITIES:
-            - You can respond fluently in multiple Indian languages including Telugu, Hindi, Tamil, Kannada, and Malayalam
-            - When a user asks a question in one of these languages, respond in the same language
-            - For transliteration requests, you can convert between scripts while maintaining the same language (e.g., Telugu written in Latin script or 'Tenglish')
-            - Never claim you cannot speak or understand these languages
-            
-            HANDLING NON-BUS QUERIES:
-            - For general questions not related to bus booking, provide brief, helpful responses
-            - For identity questions like "what's your name", always state that you are Ṧ.AI
-            - For greetings like "hi", "hello", respond with a friendly greeting
-            - Only direct users back to bus-related topics for completely off-topic conversations
-            
-            OUTPUT FORMAT FOR BUS LISTINGS:
-            When providing bus information, use this JSON format inside triple backticks:
-            ```json
-            {
-            "trips": [
-                {
-                "busNumber": "123",
-                "price": "499",
-                "seats": "84",
-                "rating": "4.6",
-                "from": "Hyderabad",
-                "to": "Guntur",
-                "boardingPoint": "L B Nagar Metro Station",
-                "droppingPoint": "NTR CIRCLE RTC Bus Stand",
-                "departureTime": "10:00 PM",
-                "arrivalTime": "5:30 AM",
-                "duration": "7h 30m",
-                "tripId": "12345",
-                "busType": "AC Sleeper",
-                "recommendations": {
-                    "reasonable": {
-                    "window": {"seatNumber": "1", "price": "449"},
-                    "aisle": {"seatNumber": "2", "price": "449"}
+            try:
+                if os.path.exists(identity_info_path):
+                    with open(identity_info_path, 'r', encoding='utf-8') as f:
+                        identity_info = f.read()
+                        print(f"Loaded identity info from {identity_info_path}")
+                else:
+                    # Default identity info
+                    identity_info = """
+                    
+                    ASSISTANT IDENTITY:
+                    - Your name is Ṧ.AI (pronounced 'Sai')
+                    - You are the Fresh Bus AI travel assistant
+                    - When asked about your name or identity, always identify yourself as Ṧ.AI
+                    - When asked simple greeting questions like "hi", "hello", respond with a friendly greeting
+                    
+                    LANGUAGE CAPABILITIES:
+                    - You can respond fluently in multiple Indian languages including Telugu, Hindi, Tamil, Kannada, and Malayalam
+                    - When a user asks a question in one of these languages, respond in the same language
+                    - For transliteration requests, you can convert between scripts while maintaining the same language (e.g., Telugu written in Latin script or 'Tenglish')
+                    - Never claim you cannot speak or understand these languages
+                    
+                    HANDLING NON-BUS QUERIES:
+                    - For general questions not related to bus booking, provide brief, helpful responses
+                    - For identity questions like "what's your name", always state that you are Ṧ.AI
+                    - For greetings like "hi", "hello", respond with a friendly greeting
+                    - Only direct users back to bus-related topics for completely off-topic conversations
+                    
+                    OUTPUT FORMAT FOR BUS LISTINGS:
+                    When providing bus information, use this JSON format inside triple backticks:
+                    ```json
+                    {
+                    "trips": [
+                        {
+                        "busNumber": "123",
+                        "price": "499",
+                        "seats": "84",
+                        "rating": "4.6",
+                        "from": "Hyderabad",
+                        "to": "Guntur",
+                        "boardingPoint": "L B Nagar Metro Station",
+                        "droppingPoint": "NTR CIRCLE RTC Bus Stand",
+                        "departureTime": "10:00 PM",
+                        "arrivalTime": "5:30 AM",
+                        "duration": "7h 30m",
+                        "tripId": "12345",
+                        "busType": "AC Sleeper",
+                        "recommendations": {
+                            "reasonable": {
+                            "window": {"seatNumber": "1", "price": "449"},
+                            "aisle": {"seatNumber": "2", "price": "449"}
+                            }
+                        }
+                        }
+                    ]
                     }
-                }
-                }
-            ]
-            }
-            ```
-            
-            When the user wants this information in another language, first provide the JSON, then translate it to the requested language.
-            """
+                    ```
+                    
+                    When the user wants this information in another language, first provide the JSON, then translate it to the requested language.
+                    """
+            except Exception as e:
+                print(f"Error loading identity info: {e}")
+                # Use a minimal identity info if there's an error
+                identity_info = """
+                ASSISTANT IDENTITY:
+                - Your name is Ṧ.AI (pronounced 'Sai')
+                - You are the Fresh Bus AI travel assistant
+                """
             
             self.system_prompt += identity_info
             
@@ -994,7 +986,13 @@ class FreshBusAssistant:
     
     async def init_http_session(self):
         if self.http_session is None:
-            timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_connect=10, sock_read=10)
+            timeout_config = Config.get_http_timeout_config()
+            timeout = aiohttp.ClientTimeout(
+                total=timeout_config["total"],
+                connect=timeout_config["connect"],
+                sock_connect=timeout_config["sock_connect"],
+                sock_read=timeout_config["sock_read"]
+            )
             self.http_session = aiohttp.ClientSession(timeout=timeout)
             print("HTTP session initialized with timeout settings")
             await self.embeddings_client.init_session()
@@ -1106,8 +1104,8 @@ class FreshBusAssistant:
         current_time = time.time()
         
         if not force_refresh and cache_key in self.user_tickets_cache:
-            # Use cache if it's less than 5 minutes old
-            if current_time - self.user_tickets_cache_expiry.get(cache_key, 0) < 300:
+            # Use cache if it's not expired
+            if current_time - self.user_tickets_cache_expiry.get(cache_key, 0) < Config.CACHE_EXPIRY_SECONDS:
                 return self.user_tickets_cache[cache_key]
         
         if not self.http_session:
@@ -1389,7 +1387,9 @@ class FreshBusAssistant:
             print(f"Exception in get_active_tickets_and_status: {e}")
             return None
     
-    def trim_text(self, text, token_limit=2000):
+    def trim_text(self, text, token_limit=None):
+        if token_limit is None:
+            token_limit = Config.DEFAULT_TOKEN_LIMIT
         tokens = tokenizer.encode(text)
         if len(tokens) > token_limit:
             return tokenizer.decode(tokens[:token_limit])
@@ -3542,7 +3542,7 @@ class FreshBusAssistant:
         dynamic_system_prompt = ""
         try:
             dynamic_system_prompt = await self.vector_db.get_system_prompt(query)
-            dynamic_system_prompt = self.trim_text(dynamic_system_prompt, token_limit=1000)
+            dynamic_system_prompt = self.trim_text(dynamic_system_prompt, token_limit=Config.SYSTEM_PROMPT_TOKEN_LIMIT)
         except Exception as e:
             print(f"Error getting system prompt: {e}")
             dynamic_system_prompt = "You are a Fresh Bus travel assistant. Provide accurate bus information based on API data only."
@@ -3702,7 +3702,7 @@ class FreshBusAssistant:
                 prompt=query,
                 system_message=system_message,
                 messages=recent_messages,
-                max_tokens=2000,
+                max_tokens=Config.DEFAULT_TOKEN_LIMIT,
                 temperature=0.7
             ):
                 if "error" in chunk:
@@ -4382,7 +4382,7 @@ async def speech_to_text(audio: UploadFile = File(...)):
         temp_file_path = temp_file.name
         temp_file.write(contents)
         temp_file.close()
-        api_key = os.getenv("FIREWORKS_API_KEY")
+        api_key = Config.FIREWORKS_API_KEY
         if not api_key:
             return JSONResponse(
                 status_code=500,
