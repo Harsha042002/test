@@ -1,0 +1,360 @@
+/*------------------------------------------------------------------------------
+  1. CSS Variables & Design Tokens
+------------------------------------------------------------------------------*/
+/*
+Define a common color palette and typography scale using CSS variables.
+These tokens ensure consistency and make it easy to adjust the design globally.
+*/
+:root {
+    /* Colors */
+    --color-primary: #0078d4;
+    --color-secondary: #2b88d8;
+    --color-bg: #ffffff;
+    --color-text: #333333;
+    --color-muted: #777777;
+
+    --color-app-bg: #ffffff;
+    --color-sidebar-bg: #ffffff;
+    --color-header-bg: #ffffff;
+    --color-logo-light: #1765f3;
+
+    /* Spacing */
+    --space-xs: 0.25rem;
+    --space-sm: 0.5rem;
+    --space-md: 1rem;
+    --space-lg: 2rem;
+    --space-xl: 3rem;
+
+    /* Typography */
+    --font-base: 'Segoe UI', Arial, sans-serif;
+    --font-size-base: 16px;
+    --font-size-sm: 0.875rem;
+    --font-size-lg: 1.125rem;
+    --line-height: 1.5;
+
+    /* Breakpoints */
+    --breakpoint-sm: 480px;
+    --breakpoint-md: 768px;
+    --breakpoint-lg: 1024px;
+}
+
+.dark {
+    --color-app-bg: #121212;
+    --color-sidebar-bg: #000000;
+    --color-header-bg: #121212;
+    --color-text: #e5e5e5;
+    --color-logo-light: #fbe822; /* logo color in dark */
+}
+
+/*------------------------------------------------------------------------------
+  2. Global Reset & Normalize
+------------------------------------------------------------------------------*/
+/*
+Reset default browser styles and apply a consistent box sizing model.
+This section helps to eliminate browser inconsistencies.
+*/
+/* Ensure consistent box-sizing */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+/* Remove default margin/padding from body and html */
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Responsive Typography */
+html {
+    font-size: 16px; /* Base font size */
+    /* Set base font-size for responsive typography */
+    font-size: 100%;
+    /* Enable smoother text rendering */
+    -webkit-text-size-adjust: 100%;
+    -ms-text-size-adjust: 100%;
+}
+
+@media (min-width: 768px) {
+    html {
+        font-size: 18px; /* Scale up font size for medium screens */
+    }
+}
+
+@media (min-width: 1024px) {
+    html {
+        font-size: 20px; /* Scale up font size for large screens */
+    }
+}
+
+body {
+    font-family: var(--font-base);
+    font-size: var(--font-size-base);
+    line-height: var(--line-height);
+    color: var(--color-text);
+    background-color: var(--color-bg);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+/*
+Remove default list styles and set consistent styling
+*/
+ul, ol {
+    list-style: none;
+}
+
+/* Normalize images and media */
+img, video, svg, canvas, audio {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+/* Normalize form elements */
+input, button, textarea, select {
+    font: inherit;
+    border: none;
+    background: none;
+    outline: none;
+}
+
+/* Input and Button Styling */
+input, button, textarea {
+    font-size: 1rem; /* Match base font size */
+    padding: 0.75rem 1rem; /* Consistent padding */
+    border-radius: 0.5rem; /* Rounded corners */
+}
+
+@media (min-width: 768px) {
+    input, button, textarea {
+        font-size: 1.125rem; /* Scale up font size */
+        padding: 1rem 1.25rem; /* Adjust padding */
+    }
+}
+
+/* Ensure consistent font sizes */
+textarea, input, button {
+  font-size: 1rem;
+}
+
+@media (min-width: 768px) {
+  textarea, input, button {
+    font-size: 1.125rem;
+  }
+}
+
+/* Anchor tags: remove default underline but add hover effect for accessibility */
+a {
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+}
+
+a:hover, a:focus {
+    color: var(--color-primary);
+}
+
+/*------------------------------------------------------------------------------
+  3. Responsive Typography & Spacing
+------------------------------------------------------------------------------*/
+/*
+Set up responsive typography that scales between breakpoints.
+Utilize media queries for controlling relative sizing.
+*/
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 600;
+    margin-bottom: var(--space-md);
+    line-height: 1.2;
+}
+
+p {
+    margin-bottom: var(--space-md);
+}
+
+/* Responsive typography for headings */
+h1 { font-size: 2rem; }
+h2 { font-size: 1.75rem; }
+h3 { font-size: 1.5rem; }
+h4 { font-size: 1.25rem; }
+h5 { font-size: 1rem; }
+h6 { font-size: 0.875rem; }
+
+@media (min-width: var(--breakpoint-md)) {
+    h1 { font-size: 2.5rem; }
+    h2 { font-size: 2.25rem; }
+    h3 { font-size: 2rem; }
+    h4 { font-size: 1.75rem; }
+    h5 { font-size: 1.25rem; }
+    h6 { font-size: 1rem; }
+}
+
+/*------------------------------------------------------------------------------
+  4. Common HTML Elements & Accessibility
+------------------------------------------------------------------------------*/
+/*
+Provide sensible defaults for block elements and forms.
+Ensure that the design remains accessible with readable font sizes and contrasts.
+*/
+blockquote {
+    margin: var(--space-md) var(--space-lg);
+    padding-left: var(--space-md);
+    border-left: 4px solid var(--color-muted);
+    color: var(--color-muted);
+    font-style: italic;
+}
+
+hr {
+    border: none;
+    border-top: 1px solid var(--color-muted);
+    margin: var(--space-lg) 0;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: var(--space-lg);
+}
+
+th, td {
+    padding: var(--space-sm);
+    text-align: left;
+    border-bottom: 1px solid var(--color-muted);
+}
+
+/* Focus styles for interactive elements */
+:focus {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+/* Override default focus outline for accessibility (use with caution) */
+button:focus,
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none !important;
+}
+
+/*------------------------------------------------------------------------------
+  5. Utility Classes for Layout and Spacing
+------------------------------------------------------------------------------*/
+/*
+Provide utility classes so that common layout and spacing adjustments can be applied quickly.
+*/
+.container {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 var(--space-md);
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1rem;
+}
+
+@media (min-width: 768px) {
+    .container {
+        padding: 2rem;
+    }
+}
+
+/* Ensure consistent container width */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+@media (min-width: 768px) {
+  .container {
+    padding: 2rem;
+  }
+}
+
+.mt-xs { margin-top: var(--space-xs); }
+.mt-sm { margin-top: var(--space-sm); }
+.mt-md { margin-top: var(--space-md); }
+.mt-lg { margin-top: var(--space-lg); }
+.mt-xl { margin-top: var(--space-xl); }
+
+.mb-xs { margin-bottom: var(--space-xs); }
+.mb-sm { margin-bottom: var(--space-sm); }
+.mb-md { margin-bottom: var(--space-md); }
+.mb-lg { margin-bottom: var(--space-lg); }
+.mb-xl { margin-bottom: var(--space-xl); }
+
+.p-xs { padding: var(--space-xs); }
+.p-sm { padding: var(--space-sm); }
+.p-md { padding: var(--space-md); }
+.p-lg { padding: var(--space-lg); }
+.p-xl { padding: var(--space-xl); }
+
+.flex {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+}
+
+/* Utility for centering content */
+.center {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Hide scrollbar */
+.hide-scrollbar {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, and Opera */
+}
+
+.flex-1 {
+  flex: 1;
+  overflow: hidden; /* Ensure child elements handle overflow */
+}
+
+.overflow-y-auto {
+  overflow-y: auto; /* Enable vertical scrolling */
+}
+
+/*------------------------------------------------------------------------------
+  6. Cross-Browser Compatibility & Performance Optimizations
+------------------------------------------------------------------------------*/
+/*
+Using modern CSS best practices to ensure cross-browser compatibility.
+Leverage hardware acceleration for smoother animations where needed.
+*/
+@supports (display: grid) {
+    .grid {
+        display: grid;
+        gap: var(--space-md);
+    }
+}
+
+/* Additional performance optimizations */
+/* Example selector for will-change property */
+.animated-element {
+    will-change: transform; /* Use with caution on frequently animated elements */
+}
+
+/* Fix for header positioning */
+header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 50;
+}
+
+/*------------------------------------------------------------------------------
+  End of global.css
+------------------------------------------------------------------------------*/
