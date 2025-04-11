@@ -144,24 +144,23 @@ class GeminiProvider(AIProvider):
         self.client = genai.GenerativeModel(model_name=self._model)
         logger.info(f"Initialized Gemini provider with model: {self._model}")
     
-    async def generate_stream(self, 
-                             prompt: str, 
-                             system_message: str, 
-                             messages: List[Dict[str, str]], 
-                             max_tokens: int = 2000,
-                             temperature: float = 0.7) -> AsyncGenerator[Dict[str, Any], None]:
-        """Generate streaming response from Gemini."""
-        if not self.client:
+    async def generate_stream(
+        self, 
+        prompt: str, 
+        system_message: str, 
+        messages: List[Dict[str, str]],
+        max_tokens: int = 1000,
+        temperature: float = 0.7
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Generate a streaming response from Gemini"""
+        if not self.initialized:
             await self.initialize()
         
         try:
             # Convert messages to Gemini format
-            import google.generativeai as genai
-            
-            # Create content array for the conversation
             gemini_content = []
             
-            # Add system message as first user message if provided
+            # Add system message
             if system_message:
                 gemini_content.append({
                     "role": "user",
@@ -169,69 +168,72 @@ class GeminiProvider(AIProvider):
                 })
                 gemini_content.append({
                     "role": "model",
-                    "parts": [{"text": "I'll help you with that."}]
+                    "parts": [{"text": "I understand."}]
                 })
             
-            # Add past messages
+            # Add conversation history
             for msg in messages:
                 role = "user" if msg["role"] == "user" else "model"
                 gemini_content.append({
                     "role": role,
                     "parts": [{"text": msg["content"]}]
                 })
+
+            # Create chat
+            chat = self.client.start_chat(history=gemini_content)
             
-            # Add current prompt as the last user message
-            gemini_content.append({
-                "role": "user",
-                "parts": [{"text": prompt}]
-            })
-            
-            # Create a wrapper to run the synchronous Gemini API in a thread pool
-            loop = asyncio.get_event_loop()
-            
-            # Set up safety settings and generation config
-            generation_config = {
-                "temperature": temperature,
-                "max_output_tokens": max_tokens,
-                "top_p": 0.95,
-                "top_k": 64
-            }
-            
-            # Stream the response
-            stream = await loop.run_in_executor(
-                None,
-                lambda: self.client.generate_content(
-                    contents=gemini_content,
-                    generation_config=generation_config,
-                    stream=True
-                )
+            # Get streaming response
+            response = chat.send_message(
+                prompt,
+                stream=True,
+                generation_config={
+                    "temperature": temperature,
+                    "max_output_tokens": max_tokens,
+                    "top_p": 0.95,
+                    "top_k": 40
+                }
             )
             
-            # Process streaming response
-            full_response = ""
-            async for chunk in self._aiter_stream(stream):
-                if hasattr(chunk, 'text'):
-                    chunk_text = chunk.text
-                    full_response += chunk_text
-                    yield {"text": chunk_text, "done": False}
+            complete_response = ""
+            async for chunk in self._async_iterator(response):
+                if isinstance(chunk, dict) and "text" in chunk:
+                    text = chunk["text"]
+                elif hasattr(chunk, "text"):
+                    text = chunk.text
+                else:
+                    continue
+                    
+                if text:
+                    complete_response += text
+                    yield {"text": text, "done": False}
+                    await asyncio.sleep(0)  # Give other tasks a chance to run
             
-            # Final yield with done flag
-            yield {"text": "", "done": True, "complete_response": full_response}
+            # Send final chunk with complete response
+            yield {"text": "", "done": True, "complete_response": complete_response}
             
         except Exception as e:
-            logger.error(f"Error generating Gemini response: {str(e)}")
+            print(f"Error generating Gemini response: {str(e)}")
             yield {"error": str(e), "done": True}
-    
-    async def _aiter_stream(self, stream):
-        """Helper method to convert synchronous iterator to async iterator."""
-        loop = asyncio.get_event_loop()
-        for chunk in stream:
-            yield await loop.run_in_executor(None, lambda: chunk)
+
+    async def _async_iterator(self, sync_iterator):
+        """Helper method to convert synchronous iterator to async"""
+        for item in sync_iterator:
+            yield item
+            await asyncio.sleep(0)  # Allow other tasks to run
     
     async def count_tokens(self, text: str) -> int:
-        """Approximate token count for Gemini."""
-        # This is a rough approximation, as Gemini doesn't expose its tokenizer
-        return int(len(text) * self.token_multiplier)
+        """Approximate token count for Gemini"""
+        if not self.initialized:
+            await self.initialize()
+        
+        try:
+            # First try using the built-in token counter
+            result = self.client.count_tokens(text)
+            return result.total_tokens
+        except Exception as e:
+            print(f"Error counting tokens with Gemini: {e}")
+            # Fallback to rough approximation
+            return len(text) // 4  # Rough estimate: 4 chars ≈ 1 token
     
     async def cleanup(self):
         """Clean up resources."""
@@ -504,76 +506,84 @@ class GeminiProvider(AIProvider):
         if not self.initialized:
             await self.initialize()
         
-        if not self.client:
-            yield {"error": "Gemini client not initialized"}
-            return
-        
-        # Update generation config with current parameters
-        self.generation_config["temperature"] = temperature
-        self.generation_config["max_output_tokens"] = max_tokens
-        
-        # Convert messages to Gemini format
-        gemini_messages = []
-        
-        # Add system message as first user message
-        gemini_messages.append({"role": "user", "parts": [system_message]})
-        gemini_messages.append({"role": "model", "parts": ["I understand. I'll follow these instructions."]})
-        
-        # Add previous messages
-        for msg in messages:
-            if msg["role"] == "user":
-                gemini_messages.append({"role": "user", "parts": [msg["content"]]})
-            elif msg["role"] == "assistant":
-                gemini_messages.append({"role": "model", "parts": [msg["content"]]})
-        
-        # Add the current prompt if not already in messages
-        if not messages or messages[-1]["role"] != "user" or messages[-1]["content"] != prompt:
-            gemini_messages.append({"role": "user", "parts": [prompt]})
-        
         try:
-            # Create a chat session
-            chat = self.client.start_chat(history=gemini_messages[:-1])
+            # Convert messages to Gemini format
+            gemini_content = []
             
-            # Get the response stream
+            # Add system message
+            if system_message:
+                gemini_content.append({
+                    "role": "user",
+                    "parts": [{"text": system_message}]
+                })
+                gemini_content.append({
+                    "role": "model",
+                    "parts": [{"text": "I understand."}]
+                })
+            
+            # Add conversation history
+            for msg in messages:
+                role = "user" if msg["role"] == "user" else "model"
+                gemini_content.append({
+                    "role": role,
+                    "parts": [{"text": msg["content"]}]
+                })
+
+            # Create chat
+            chat = self.client.start_chat(history=gemini_content)
+            
+            # Get streaming response
             response = chat.send_message(
-                content=gemini_messages[-1]["parts"][0],
-                stream=True
+                prompt,
+                stream=True,
+                generation_config={
+                    "temperature": temperature,
+                    "max_output_tokens": max_tokens,
+                    "top_p": 0.95,
+                    "top_k": 40
+                }
             )
             
             complete_response = ""
-            
-            # Process the stream
             async for chunk in self._async_iterator(response):
-                if chunk.text:
-                    complete_response += chunk.text
-                    yield {"text": chunk.text, "done": False}
+                if isinstance(chunk, dict) and "text" in chunk:
+                    text = chunk["text"]
+                elif hasattr(chunk, "text"):
+                    text = chunk.text
+                else:
+                    continue
+                    
+                if text:
+                    complete_response += text
+                    yield {"text": text, "done": False}
+                    await asyncio.sleep(0)  # Give other tasks a chance to run
             
-            # Final chunk with complete response
+            # Send final chunk with complete response
             yield {"text": "", "done": True, "complete_response": complete_response}
             
         except Exception as e:
-            yield {"error": f"Error with Gemini API: {str(e)}"}
-    
+            print(f"Error generating Gemini response: {str(e)}")
+            yield {"error": str(e), "done": True}
+
     async def _async_iterator(self, sync_iterator):
-        """Convert a synchronous iterator to an async one"""
+        """Helper method to convert synchronous iterator to async"""
         for item in sync_iterator:
             yield item
-            # Small sleep to allow other tasks to run
-            await asyncio.sleep(0)
+            await asyncio.sleep(0)  # Allow other tasks to run
     
     async def count_tokens(self, text: str) -> int:
-        """Count the number of tokens in the given text"""
+        """Approximate token count for Gemini"""
         if not self.initialized:
             await self.initialize()
         
         try:
-            # Use Gemini's token counter
-            result = genai.count_tokens(model=self.model, prompt=text)
+            # First try using the built-in token counter
+            result = self.client.count_tokens(text)
             return result.total_tokens
         except Exception as e:
             print(f"Error counting tokens with Gemini: {e}")
-            # Fallback to rough estimation (1 token ≈ 4 chars)
-            return len(text) // 4
+            # Fallback to rough approximation
+            return len(text) // 4  # Rough estimate: 4 chars ≈ 1 token
     
     async def cleanup(self) -> None:
         """Clean up Gemini client resources"""

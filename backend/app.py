@@ -902,6 +902,29 @@ class FreshBusAssistant:
             print(f"Error loading system prompt: {e}")
             self.system_prompt = "You are a Fresh Bus travel assistant. Provide accurate bus information based on API data only."
     
+    def is_valid_route(self, source, destination):
+        """
+        Check if a route is valid based on the approved routes in the system prompt
+        """
+        # Define the approved routes based on system prompt
+        approved_routes = [
+            ("hyderabad", "guntur"),
+            ("hyderabad", "vijayawada"),
+            ("vijayawada", "hyderabad"),
+            ("guntur", "hyderabad"),
+            ("bangalore", "tirupati"),
+            ("bangalore", "chittoor"),
+            ("tirupati", "bangalore"),
+            ("chittoor", "bangalore")
+        ]
+        
+        # Normalize source and destination
+        source = source.lower() if source else ""
+        destination = destination.lower() if destination else ""
+        
+        # Check if the route is in the approved routes
+        return (source, destination) in approved_routes
+
     async def init_system_prompt(self):
         if not self.system_prompt_initialized:
             # Load identity info from a file if it exists, otherwise use default
@@ -1442,28 +1465,62 @@ class FreshBusAssistant:
         
         return response_text
     
-    def generate_direct_bus_response(self, api_data, context):
+    async def generate_direct_bus_response(self, api_data, context, return_json=False):
         """
         Generate bus response DIRECTLY from API data without allowing hallucination
+        Optionally return as JSON if return_json=True
         """
+        # Check for invalid route first
+        if api_data.get("invalid_route"):
+            invalid_route = api_data["invalid_route"]
+            source = invalid_route["requested_source"].capitalize()
+            destination = invalid_route["requested_destination"].capitalize()
+            
+            if return_json:
+                return {
+                    "error": "invalid_route",
+                    "message": f"No bus services from {source} to {destination}",
+                    "valid_routes": invalid_route["valid_routes"]
+                }
+                
+            response = f"I'm sorry, but we don't currently operate bus services from {source} to {destination}.\n\n"
+            response += "We offer the following routes:\n"
+            for route in invalid_route["valid_routes"]:
+                response += f"• {route}\n"
+            response += "\nWould you like to book a ticket for one of these routes instead? "
+            response += "Or you can check the Fresh Bus website/app for updates on other routes."
+            
+            return response
+        
         trips = api_data.get("trips", [])
         
         if not trips:
+            if return_json:
+                return {"error": "no_trips", "message": "No buses found matching your criteria."}
             return "I couldn't find any buses matching your criteria."
         
         # Get source and destination based on context
         source = context.get('user_requested_source') or trips[0].get('source', 'Unknown')
         destination = context.get('user_requested_destination') or trips[0].get('destination', 'Unknown')
         
-        # Create header
+        # Get IDs for source and destination
+        source_id = context.get('source_id') or self.stations.get(str(source).lower(), '3')
+        destination_id = context.get('destination_id') or self.stations.get(str(destination).lower(), '13')
+        
+        # Create header for text response
         trip_count = len(trips)
         header = f"I found {trip_count} bus{'es' if trip_count > 1 else ''} from {source} to {destination} for tomorrow:\n\n"
         
+        # For JSON response
+        json_output = {"trips": []}
+        
         formatted_buses = []
         for idx, trip in enumerate(trips):
+            trip_id = trip.get('tripid', 'Unknown')
+            
             # Get basic trip data directly from JSON
             bus_data = {
-                'tripid': trip.get('tripid', 'Unknown'),
+                'tripid': trip_id,
                 'fare': trip.get('fare', 'Unknown'),
                 'seats': trip.get('availableseats', 'Unknown'),
                 'rating': trip.get('redbusrating', 'Unknown'),
@@ -1502,33 +1559,360 @@ class FreshBusAssistant:
                 except:
                     duration = "N/A"
             
-            # Get seat recommendations
-            window_seat = "33"  # Default reasonable values from API
-            window_price = "598"
-            aisle_seat = "34"
-            aisle_price = "598"
+            # Process available seats from the API data
+            available_seats = []
+            seat_data = api_data.get("seats", [])
             
-            if api_data.get("recommendations") and api_data["recommendations"].get("Reasonable"):
-                if api_data["recommendations"]["Reasonable"].get("window") and len(api_data["recommendations"]["Reasonable"]["window"]) > 0:
-                    window_seat = api_data["recommendations"]["Reasonable"]["window"][0].get("number", "33")
-                    window_price = api_data["recommendations"]["Reasonable"]["window"][0].get("price", "598")
+            # If seat data is not in main API response, fetch it for this trip
+            if not api_data.get("recommendations") and trip.get('tripid'):
+                # Convert source/destination names to IDs if needed
+                if not str(source_id).isdigit():
+                    source_id = self.stations.get(str(source_id).lower(), '3')
+                if not str(destination_id).isdigit():
+                    destination_id = self.stations.get(str(destination_id).lower(), '13')
                 
-                if api_data["recommendations"]["Reasonable"].get("aisle") and len(api_data["recommendations"]["Reasonable"]["aisle"]) > 0:
-                    aisle_seat = api_data["recommendations"]["Reasonable"]["aisle"][0].get("number", "34")
-                    aisle_price = api_data["recommendations"]["Reasonable"]["aisle"][0].get("price", "598")
+                try:
+                    if not self.http_session:
+                        await self.init_http_session()
+                        
+                    seats_url = f"{self.BASE_URL}/trips/{trip_id}/seats?source_id={source_id}&destination_id={destination_id}"
+                    print(f"Fetching seats from: {seats_url}")
+                    
+                    async with self.http_session.get(seats_url) as response:
+                        if response.status == 200:
+                            seat_data = await response.json()
+                            if "seats" in seat_data:
+                                for seat in seat_data["seats"]:
+                                    if (not seat.get('isOccupied', False) and 
+                                        seat.get('availabilityStatus', '') in ['A', 'M', 'F']):
+                                        try:
+                                            seat_number = int(seat.get('seatName', '0'))
+                                            available_seats.append({
+                                                'number': seat_number,
+                                                'price': seat.get('totalFare', 0)
+                                            })
+                                        except (ValueError, TypeError):
+                                            # Skip invalid seat numbers
+                                            pass
+                except Exception as e:
+                    print(f"Error fetching seat data: {e}")
             
-            # Format each bus as a separate section with proper markdown
-            formatted_bus = f"> *🚌 {source} to {destination} | {bus_data.get('departure_time', 'Unknown')} - {bus_data.get('arrival_time', 'Unknown')} | {bus_data.get('vehicletype', 'AC Seater')} | {duration}*\n"
-            formatted_bus += f"> Price: ₹{bus_data.get('fare', 'Unknown')} | {bus_data.get('seats', 'Unknown')} seats | Rating: {bus_data.get('rating', 'Unknown')}/5\n"
-            formatted_bus += f"> Boarding: {bus_data.get('boarding', 'Unknown')}\n"
-            formatted_bus += f"> Dropping: {bus_data.get('dropping', 'Unknown')}\n"
-            formatted_bus += f"> Recommended seats:\n"
-            formatted_bus += f"> • **Reasonable**: Window {window_seat} (₹{window_price}), Aisle {aisle_seat} (₹{aisle_price})"
+            # Create seat recommendations based on price tiers
+            recommendations = {
+                "Reasonable": {"window": [], "aisle": []},
+                "Premium": {"window": [], "aisle": []},
+                "Budget-Friendly": {"window": [], "aisle": []}
+            }
+            
+            # Track assigned seats to prevent duplicates
+            assigned_seats = set()
+            
+            if available_seats:
+                # Split seats into window and aisle first
+                window_seats = []
+                aisle_seats = []
+                
+                for seat in available_seats:
+                    seat_number = seat['number']
+                    
+                    # Determine if it's window or aisle based on the CONFIG
+                    if seat_number in Config.WINDOW_SEATS:
+                        window_seats.append(seat)
+                    elif seat_number in Config.AISLE_SEATS:
+                        aisle_seats.append(seat)
+                
+                # Sort both lists by price
+                window_seats.sort(key=lambda s: s['price'])
+                aisle_seats.sort(key=lambda s: s['price'])
+                
+                # If we have both window and aisle seats, process them
+                if window_seats and aisle_seats:
+                    # Get min and max prices
+                    all_prices = [s['price'] for s in window_seats + aisle_seats]
+                    min_price = min(all_prices)
+                    max_price = max(all_prices)
+                    price_range = max_price - min_price
+                    
+                    # Define price thresholds with slightly different boundaries
+                    budget_max = min_price + (price_range * 0.33) if price_range > 0 else min_price + 50
+                    premium_min = max_price - (price_range * 0.33) if price_range > 0 else max_price - 50
+                    
+                    # Categorize window seats - FIXED: Check assigned_seats
+                    for seat in window_seats:
+                        seat_num = seat['number']
+                        if seat_num in assigned_seats:
+                            continue
+                            
+                        if seat['price'] <= budget_max:
+                            recommendations["Budget-Friendly"]["window"].append(seat)
+                        elif seat['price'] >= premium_min:
+                            recommendations["Premium"]["window"].append(seat)
+                        else:
+                            recommendations["Reasonable"]["window"].append(seat)
+                            
+                        assigned_seats.add(seat_num)
+                    
+                    # Categorize aisle seats - FIXED: Check assigned_seats
+                    for seat in aisle_seats:
+                        seat_num = seat['number']
+                        if seat_num in assigned_seats:
+                            continue
+                            
+                        if seat['price'] <= budget_max:
+                            recommendations["Budget-Friendly"]["aisle"].append(seat)
+                        elif seat['price'] >= premium_min:
+                            recommendations["Premium"]["aisle"].append(seat)
+                        else:
+                            recommendations["Reasonable"]["aisle"].append(seat)
+                            
+                        assigned_seats.add(seat_num)
+                    
+                    # Ensure we have at least one seat of each type in each category if possible
+                    for category in ["Budget-Friendly", "Reasonable", "Premium"]:
+                        # If we're missing window seats in this category
+                        if not recommendations[category]["window"] and category == "Budget-Friendly":
+                            # Try to get the cheapest window seat from Reasonable
+                            if recommendations["Reasonable"]["window"]:
+                                seat_to_move = min(recommendations["Reasonable"]["window"], key=lambda s: s["price"])
+                                seat_num = seat_to_move["number"]
+                                # Only move if not already assigned to another category
+                                if seat_num not in assigned_seats or seat_num in [s["number"] for s in recommendations["Reasonable"]["window"]]:
+                                    recommendations[category]["window"].append(seat_to_move)
+                                    # Remove from Reasonable
+                                    recommendations["Reasonable"]["window"] = [
+                                        s for s in recommendations["Reasonable"]["window"] 
+                                        if s["number"] != seat_to_move["number"]
+                                    ]
+                        
+                        # If we're missing aisle seats in this category
+                        if not recommendations[category]["aisle"] and category == "Budget-Friendly":
+                            # Try to get the cheapest aisle seat from Reasonable
+                            if recommendations["Reasonable"]["aisle"]:
+                                seat_to_move = min(recommendations["Reasonable"]["aisle"], key=lambda s: s["price"])
+                                seat_num = seat_to_move["number"]
+                                # Only move if not already assigned to another category
+                                if seat_num not in assigned_seats or seat_num in [s["number"] for s in recommendations["Reasonable"]["aisle"]]:
+                                    recommendations[category]["aisle"].append(seat_to_move)
+                                    # Remove from Reasonable
+                                    recommendations["Reasonable"]["aisle"] = [
+                                        s for s in recommendations["Reasonable"]["aisle"] 
+                                        if s["number"] != seat_to_move["number"]
+                                    ]
+            
+            # Final verification step to ensure no duplicates
+            seen_seats = {}
+            for category in recommendations:
+                for position in ["window", "aisle"]:
+                    unique_seats = []
+                    for seat in recommendations[category][position]:
+                        seat_num = seat["number"]
+                        if seat_num not in seen_seats:
+                            seen_seats[seat_num] = f"{category}-{position}"
+                            unique_seats.append(seat)
+                        else:
+                            print(f"Preventing duplicate: Seat {seat_num} already in {seen_seats[seat_num]}")
+                    recommendations[category][position] = unique_seats
+            
+            # Build JSON output for this bus
+            json_bus = {
+                "busNumber": trip.get('servicenumber', 'Unknown'),
+                "price": str(bus_data.get('fare', 'Unknown')),
+                "seats": str(bus_data.get('seats', 'Unknown')),
+                "rating": str(bus_data.get('rating', 'Unknown')),
+                "from": source,
+                "to": destination,
+                "boardingPoint": bus_data.get('boarding', 'Unknown'),
+                "droppingPoint": bus_data.get('dropping', 'Unknown'),
+                "departureTime": bus_data.get('departure_time', 'Unknown'),
+                "arrivalTime": bus_data.get('arrival_time', 'Unknown'),
+                "duration": duration,
+                "tripId": str(trip_id),
+                "busType": bus_data.get('vehicletype', 'AC Seater'),
+                "recommendations": {}
+            }
+            
+            # Add recommendations to JSON
+            for category in recommendations:
+                # Convert to lowercase for JSON format
+                category_key = category.lower().replace('-', '_')
+                json_bus["recommendations"][category_key] = {
+                    "window": {},
+                    "aisle": {}
+                }
+                
+                # Add window seat if available
+                if recommendations[category]["window"]:
+                    window_seat = recommendations[category]["window"][0]
+                    json_bus["recommendations"][category_key]["window"] = {
+                        "seatNumber": str(window_seat["number"]),
+                        "price": str(window_seat["price"])
+                    }
+                
+                # Add aisle seat if available
+                if recommendations[category]["aisle"]:
+                    aisle_seat = recommendations[category]["aisle"][0]
+                    json_bus["recommendations"][category_key]["aisle"] = {
+                        "seatNumber": str(aisle_seat["number"]),
+                        "price": str(aisle_seat["price"])
+                    }
+                    
+            # For JSON output, fetch all boarding and dropping points
+            if return_json:
+                # Fetch all boarding points for this trip
+                if not self.http_session:
+                    await self.init_http_session()
+                
+                # Initialize boarding and dropping point containers
+                boarding_points = []
+                dropping_points = []
+                
+                # Fetch boarding points
+                try:
+                    boarding_url = f"{self.BASE_URL}/trips/{trip_id}/boardings/{source_id}"
+                    print(f"Fetching all boarding points: {boarding_url}")
+                    
+                    async with self.http_session.get(boarding_url) as response:
+                        if response.status == 200:
+                            boarding_data = await response.json()
+                            # Format boarding points into a simplified structure
+                            for point in boarding_data:
+                                bp_info = point.get('boardingPoint', {})
+                                formatted_point = {
+                                    "name": bp_info.get('name', 'Unknown'),
+                                    "landmark": bp_info.get('landmark', ''),
+                                    "time": point.get('time', ''),
+                                    "latitude": bp_info.get('latitude'),
+                                    "longitude": bp_info.get('longitude'),
+                                    "address": bp_info.get('address', '')
+                                }
+                                boarding_points.append(formatted_point)
+                        else:
+                            print(f"Failed to fetch boarding points: Status {response.status}")
+                except Exception as e:
+                    print(f"Error fetching boarding points: {e}")
+                
+                # Fetch dropping points
+                try:
+                    dropping_url = f"{self.BASE_URL}/trips/{trip_id}/droppings"
+                    print(f"Fetching all dropping points: {dropping_url}")
+                    
+                    async with self.http_session.get(dropping_url) as response:
+                        if response.status == 200:
+                            dropping_data = await response.json()
+                            # Format dropping points into a simplified structure
+                            for point in dropping_data:
+                                dp_info = point.get('droppingPoint', {})
+                                formatted_point = {
+                                    "name": dp_info.get('name', 'Unknown'),
+                                    "landmark": dp_info.get('landmark', ''),
+                                    "time": point.get('time', ''),
+                                    "latitude": dp_info.get('latitude'),
+                                    "longitude": dp_info.get('longitude'),
+                                    "address": dp_info.get('address', '')
+                                }
+                                dropping_points.append(formatted_point)
+                        else:
+                            print(f"Failed to fetch dropping points: Status {response.status}")
+                except Exception as e:
+                    print(f"Error fetching dropping points: {e}")
+                
+                # Add the boarding and dropping points to the JSON output
+                json_bus["all_boarding_points"] = boarding_points
+                json_bus["all_dropping_points"] = dropping_points
+            
+            # Add to JSON output
+            json_output["trips"].append(json_bus)
+            
+            # Format each bus as a separate section with proper markdown for text output
+            formatted_bus = f"🚌 {source} to {destination} | {bus_data.get('departure_time', 'Unknown')} - {bus_data.get('arrival_time', 'Unknown')} | {bus_data.get('vehicletype', 'AC Seater')} | {duration}\n"
+            formatted_bus += f"Price: ₹{bus_data.get('fare', 'Unknown')} | {bus_data.get('seats', 'Unknown')} seats | Rating: {bus_data.get('rating', 'Unknown')}/5\n"
+            formatted_bus += f"Boarding: {bus_data.get('boarding', 'Unknown')}\n"
+            formatted_bus += f"Dropping: {bus_data.get('dropping', 'Unknown')}\n"
+            formatted_bus += f"Recommended seats:\n"
+
+            # List of standard categories we always want to display (in order)
+            standard_categories = ["Reasonable", "Premium", "Budget-Friendly"]
+
+            # Process each standard category
+            for i, category in enumerate(standard_categories):
+                formatted_bus += f"• **{category}**: "
+                
+                window_info = ""
+                aisle_info = ""
+                has_recommendations = False
+                
+                # Check if API provides data for this category
+                if api_data.get("recommendations") and api_data["recommendations"].get(category):
+                    # Get window seat recommendation if available
+                    if (api_data["recommendations"][category].get("window") and 
+                        len(api_data["recommendations"][category]["window"]) > 0):
+                        window_seat = api_data["recommendations"][category]["window"][0].get("number", "")
+                        window_price = api_data["recommendations"][category]["window"][0].get("price", "")
+                        if window_seat and window_price:
+                            window_info = f"Window {window_seat} (₹{window_price})"
+                            has_recommendations = True
+                    
+                    # Get aisle seat recommendation if available
+                    if (api_data["recommendations"][category].get("aisle") and 
+                        len(api_data["recommendations"][category]["aisle"]) > 0):
+                        aisle_seat = api_data["recommendations"][category]["aisle"][0].get("number", "")
+                        aisle_price = api_data["recommendations"][category]["aisle"][0].get("price", "")
+                        if aisle_seat and aisle_price:
+                            aisle_info = f"Aisle {aisle_seat} (₹{aisle_price})"
+                            has_recommendations = True
+                
+                # Use our generated recommendations if API data doesn't have them
+                elif recommendations[category]["window"] or recommendations[category]["aisle"]:
+                    if recommendations[category]["window"] and len(recommendations[category]["window"]) > 0:
+                        window_seat = recommendations[category]["window"][0]["number"]
+                        window_price = recommendations[category]["window"][0]["price"]
+                        window_info = f"Window {window_seat} (₹{window_price})"
+                        has_recommendations = True
+                    
+                    if recommendations[category]["aisle"] and len(recommendations[category]["aisle"]) > 0:
+                        aisle_seat = recommendations[category]["aisle"][0]["number"]
+                        aisle_price = recommendations[category]["aisle"][0]["price"]
+                        aisle_info = f"Aisle {aisle_seat} (₹{aisle_price})"
+                        has_recommendations = True
+                
+                # Add the seat information if available, otherwise indicate no data
+                if has_recommendations:
+                    if window_info:
+                        formatted_bus += window_info
+                        if aisle_info:
+                            formatted_bus += ", "
+                    if aisle_info:
+                        formatted_bus += aisle_info
+                else:
+                    formatted_bus += "No seats available"
+                
+                # Add newline if not the last category
+                if i < len(standard_categories) - 1:
+                    formatted_bus += "\n"
             
             formatted_buses.append(formatted_bus)
         
-        # Join with double newlines to ensure proper separation between buses
+        # Return JSON if requested
+        if return_json:
+            return json_output
+        
+        # Otherwise return text format
         return header + "\n\n".join(formatted_buses)
+    
+    def generate_direct_bus_response_sync(self, api_data, context, return_json=False):
+        """Synchronous wrapper for the async generate_direct_bus_response method"""
+        import asyncio
+        
+        # Get or create event loop
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            # If there's no event loop in this thread, create one
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        # Run the async method in the event loop and return its result
+        return loop.run_until_complete(self.generate_direct_bus_response(api_data, context, return_json))
 
     # Generate JSON response for bus data
     def generate_json_bus_response(self, api_data, context):
@@ -1639,7 +2023,7 @@ class FreshBusAssistant:
         user_source = context.get('user_requested_source', '')
         user_dest = context.get('user_requested_destination', '')
         
-        for i, trip in enumerate(trips):
+        for idx, trip in enumerate(trips):
             # Format departure and arrival times to IST (+5:30)
             departure_time = "Unknown"
             arrival_time = "Unknown"
@@ -1707,65 +2091,190 @@ class FreshBusAssistant:
                     # Swap boarding and dropping points
                     boarding_point, dropping_point = dropping_point, boarding_point
             
-            # Get seat recommendations
-            reasonable_window = "N/A"
-            reasonable_window_price = "N/A"
-            reasonable_aisle = "N/A"
-            reasonable_aisle_price = "N/A"
+            # Process available seats directly from the API data or fetch them
+            available_seats_data = []
+            seat_data = api_data.get("seats", [])
             
-            premium_window = "N/A"
-            premium_window_price = "N/A"
-            premium_aisle = "N/A"
-            premium_aisle_price = "N/A"
+            # If seat data is not present in the main API response, fetch it
+            if not api_data.get("recommendations") and trip.get('tripid'):
+                trip_id = trip.get('tripid')
+                source_id = context.get('source_id') or context.get('user_requested_source') or '3'
+                destination_id = context.get('destination_id') or context.get('user_requested_destination') or '13'
+                
+                # Convert source/destination names to IDs if needed
+                if not str(source_id).isdigit():
+                    source_id = self.stations.get(str(source_id).lower(), '3')
+                if not str(destination_id).isdigit():
+                    destination_id = self.stations.get(str(destination_id).lower(), '13')
+                
+                # Create a non-async HTTP request since we're in a synchronous method
+                import requests
+                try:
+                    seats_url = f"{self.BASE_URL}/trips/{trip_id}/seats?source_id={source_id}&destination_id={destination_id}"
+                    print(f"Fetching seats from: {seats_url}")
+                    
+                    response = requests.get(seats_url, timeout=10)
+                    
+                    if response.status_code == 200:
+                        seat_data = response.json()
+                        if "seats" in seat_data:
+                            for seat in seat_data["seats"]:
+                                if (not seat.get('isOccupied', False) and 
+                                    seat.get('availabilityStatus', '') in ['A', 'M', 'F']):
+                                    try:
+                                        seat_number = int(seat.get('seatName', '0'))
+                                        available_seats_data.append({
+                                            'number': seat_number,
+                                            'price': seat.get('totalFare', 0)
+                                        })
+                                    except (ValueError, TypeError):
+                                        # Skip invalid seat numbers
+                                        pass
+                except Exception as e:
+                    print(f"Error fetching seat data: {e}")
             
-            budget_window = "N/A"
-            budget_window_price = "N/A"
-            budget_aisle = "N/A"
-            budget_aisle_price = "N/A"
+            # Create seat recommendations based on price tiers if we have seat data
+            recommendations = {
+                "Reasonable": {"window": [], "aisle": []},
+                "Premium": {"window": [], "aisle": []},
+                "Budget-Friendly": {"window": [], "aisle": []}
+            }
             
-            # Set seat recommendations if available
-            if api_data.get("recommendations"):
-                rec = api_data["recommendations"]
+            if available_seats_data:
+                # Split seats into window and aisle first
+                window_seats = []
+                aisle_seats = []
                 
-                if rec.get("Reasonable"):
-                    if rec["Reasonable"].get("window") and len(rec["Reasonable"]["window"]) > 0:
-                        reasonable_window = rec["Reasonable"]["window"][0].get("number", "N/A")
-                        reasonable_window_price = rec["Reasonable"]["window"][0].get("price", "N/A")
+                for seat in available_seats_data:
+                    seat_number = seat['number']
                     
-                    if rec["Reasonable"].get("aisle") and len(rec["Reasonable"]["aisle"]) > 0:
-                        reasonable_aisle = rec["Reasonable"]["aisle"][0].get("number", "N/A")
-                        reasonable_aisle_price = rec["Reasonable"]["aisle"][0].get("price", "N/A")
+                    # Determine if it's window or aisle based on the CONFIG
+                    if seat_number in Config.WINDOW_SEATS:
+                        window_seats.append(seat)
+                    elif seat_number in Config.AISLE_SEATS:
+                        aisle_seats.append(seat)
                 
-                if rec.get("Premium"):
-                    if rec["Premium"].get("window") and len(rec["Premium"]["window"]) > 0:
-                        premium_window = rec["Premium"]["window"][0].get("number", "N/A")
-                        premium_window_price = rec["Premium"]["window"][0].get("price", "N/A")
-                    
-                    if rec["Premium"].get("aisle") and len(rec["Premium"]["aisle"]) > 0:
-                        premium_aisle = rec["Premium"]["aisle"][0].get("number", "N/A")
-                        premium_aisle_price = rec["Premium"]["aisle"][0].get("price", "N/A")
+                # Sort both lists by price
+                window_seats.sort(key=lambda s: s['price'])
+                aisle_seats.sort(key=lambda s: s['price'])
                 
-                if rec.get("Budget-Friendly"):
-                    if rec["Budget-Friendly"].get("window") and len(rec["Budget-Friendly"]["window"]) > 0:
-                        budget_window = rec["Budget-Friendly"]["window"][0].get("number", "N/A")
-                        budget_window_price = rec["Budget-Friendly"]["window"][0].get("price", "N/A")
+                # If we have both window and aisle seats, process them
+                if window_seats and aisle_seats:
+                    # Get min and max prices
+                    all_prices = [s['price'] for s in window_seats + aisle_seats]
+                    min_price = min(all_prices)
+                    max_price = max(all_prices)
+                    price_range = max_price - min_price
                     
-                    if rec["Budget-Friendly"].get("aisle") and len(rec["Budget-Friendly"]["aisle"]) > 0:
-                        budget_aisle = rec["Budget-Friendly"]["aisle"][0].get("number", "N/A")
-                        budget_aisle_price = rec["Budget-Friendly"]["aisle"][0].get("price", "N/A")
+                    # Define price thresholds
+                    budget_max = min_price + (price_range * 0.33) if price_range > 0 else min_price + 50
+                    premium_min = max_price - (price_range * 0.33) if price_range > 0 else max_price - 50
+                    
+                    # Categorize window seats
+                    for seat in window_seats:
+                        if seat['price'] <= budget_max:
+                            recommendations["Budget-Friendly"]["window"].append(seat)
+                        elif seat['price'] >= premium_min:
+                            recommendations["Premium"]["window"].append(seat)
+                        else:
+                            recommendations["Reasonable"]["window"].append(seat)
+                    
+                    # Categorize aisle seats
+                    for seat in aisle_seats:
+                        if seat['price'] <= budget_max:
+                            recommendations["Budget-Friendly"]["aisle"].append(seat)
+                        elif seat['price'] >= premium_min:
+                            recommendations["Premium"]["aisle"].append(seat)
+                        else:
+                            recommendations["Reasonable"]["aisle"].append(seat)
+                    
+                    # Ensure we have at least one seat of each type in each category if possible
+                    # If a category is missing either window or aisle, try to add one from adjacent categories
+                    for category in ["Budget-Friendly", "Reasonable", "Premium"]:
+                        # If we're missing window seats in this category
+                        if not recommendations[category]["window"] and category == "Budget-Friendly":
+                            # Try to get the cheapest window seat from Reasonable
+                            if recommendations["Reasonable"]["window"]:
+                                recommendations[category]["window"].append(recommendations["Reasonable"]["window"][0])
+                        
+                        # If we're missing aisle seats in this category
+                        if not recommendations[category]["aisle"] and category == "Budget-Friendly":
+                            # Try to get the cheapest aisle seat from Reasonable
+                            if recommendations["Reasonable"]["aisle"]:
+                                recommendations[category]["aisle"].append(recommendations["Reasonable"]["aisle"][0])
             
             # Add tripid to the listing for debugging
             tripid_note = f"(Trip ID: {trip.get('tripid', 'N/A')})"
             
             # Create formatted bus listing with user's requested direction
-            bus_listing = f"> *🚌 {source} to {destination} | {departure_time} - {arrival_time} | {bus_type} | {duration} {tripid_note}  \n"
+            bus_listing = f"> *🚌 {source} to {destination} | {departure_time} - {arrival_time} | {bus_type} | {duration} {tripid_note}*  \n"
             bus_listing += f"> Price: ₹{price} | {available_seats} seats | Rating: {rating}/5  \n"
             bus_listing += f"> Boarding: {boarding_point}{boarding_distance}  \n"
             bus_listing += f"> Dropping: {dropping_point}  \n"
             bus_listing += f"> Recommended seats:  \n"
-            bus_listing += f"> • **Reasonable**: Window {reasonable_window} (₹{reasonable_window_price}), Aisle {reasonable_aisle} (₹{reasonable_aisle_price})  \n"
-            bus_listing += f"> • **Premium**: Window {premium_window} (₹{premium_window_price}), Aisle {premium_aisle} (₹{premium_aisle_price})  \n"
-            bus_listing += f"> • **Budget-Friendly**: Window {budget_window} (₹{budget_window_price}), Aisle {budget_aisle} (₹{budget_aisle_price})*"
+
+            # List of standard categories we always want to display (in order)
+            standard_categories = ["Reasonable", "Premium", "Budget-Friendly"]
+
+            # Check if we have recommendations from the API data first
+            api_recommendations = api_data.get("recommendations", {})
+
+            # Process each standard category
+            for i, category in enumerate(standard_categories):
+                bus_listing += f"> • **{category}**: "
+                
+                window_info = ""
+                aisle_info = ""
+                has_recommendations = False
+                
+                # First try to use recommendations from API data
+                if api_recommendations and api_recommendations.get(category):
+                    # Get window seat recommendation if available
+                    if (api_recommendations[category].get("window") and 
+                        len(api_recommendations[category]["window"]) > 0):
+                        window_seat = api_recommendations[category]["window"][0].get("number", "")
+                        window_price = api_recommendations[category]["window"][0].get("price", "")
+                        if window_seat and window_price:
+                            window_info = f"Window {window_seat} (₹{window_price})"
+                            has_recommendations = True
+                    
+                    # Get aisle seat recommendation if available
+                    if (api_recommendations[category].get("aisle") and 
+                        len(api_recommendations[category]["aisle"]) > 0):
+                        aisle_seat = api_recommendations[category]["aisle"][0].get("number", "")
+                        aisle_price = api_recommendations[category]["aisle"][0].get("price", "")
+                        if aisle_seat and aisle_price:
+                            aisle_info = f"Aisle {aisle_seat} (₹{aisle_price})"
+                            has_recommendations = True
+                
+                # If we don't have recommendations from API, use our dynamically created ones
+                elif recommendations[category]["window"] or recommendations[category]["aisle"]:
+                    if recommendations[category]["window"] and len(recommendations[category]["window"]) > 0:
+                        window_seat = recommendations[category]["window"][0]["number"]
+                        window_price = recommendations[category]["window"][0]["price"]
+                        window_info = f"Window {window_seat} (₹{window_price})"
+                        has_recommendations = True
+                    
+                    if recommendations[category]["aisle"] and len(recommendations[category]["aisle"]) > 0:
+                        aisle_seat = recommendations[category]["aisle"][0]["number"]
+                        aisle_price = recommendations[category]["aisle"][0]["price"]
+                        aisle_info = f"Aisle {aisle_seat} (₹{aisle_price})"
+                        has_recommendations = True
+                
+                # Add the seat information if available, otherwise indicate no data
+                if has_recommendations:
+                    if window_info:
+                        bus_listing += window_info
+                        if aisle_info:
+                            bus_listing += ", "
+                    if aisle_info:
+                        bus_listing += aisle_info
+                else:
+                    bus_listing += "No seats available"
+                
+                # Add line break (but ensure proper formatting for markdown)
+                if i < len(standard_categories) - 1:
+                    bus_listing += "  \n"
             
             formatted_buses.append(bus_listing)
         
@@ -2150,7 +2659,7 @@ class FreshBusAssistant:
         print(f"Fetching seats: {url}")
         try:
             async with self.http_session.get(url) as response:
-                if response.status == 200:
+                if response.status == 200:  # Fixed the unmatched parenthesis here
                     return await response.json()
                 else:
                     print(f"Error fetching seats: {response.status}")
@@ -2287,81 +2796,175 @@ class FreshBusAssistant:
             print(f"Error fetching user preferences: {e}")
             return {}
     
-    def get_seat_recommendations(self, seats_data, ticket_count=1, user_preferences=None):
-        if not seats_data or 'seats' not in seats_data:
-            return {}
-        available_seats = [seat for seat in seats_data.get('seats', []) if seat['availabilityStatus'] == 'A']
-        categorized_seats = {
-            'Premium': {
-                'window': [],
-                'aisle': []
-            },
-            'Reasonable': {
-                'window': [],
-                'aisle': []
-            },
-            'Budget-Friendly': {
-                'window': [],
-                'aisle': []
-            }
-        }
-        for seat in available_seats:
-            seat_number = int(seat['seatName'])
-            seat_price = seat['totalFare']
-            category = None
-            if seat_number in self.seat_categories['Premium']:
-                category = 'Premium'
-            elif seat_number in self.seat_categories['Reasonable']:
-                category = 'Reasonable'
-            elif seat_number in self.seat_categories['Budget-Friendly']:
-                category = 'Budget-Friendly'
-            elif seat_number in self.seat_categories['Low Reasonable']:
-                category = 'Reasonable'
-            position = None
-            if seat_number in self.window_seats:
-                position = 'window'
-            elif seat_number in self.aisle_seats:
-                position = 'aisle'
-            if category and position:
-                categorized_seats[category][position].append({
-                    'number': seat_number,
-                    'price': seat_price
-                })
+    async def get_seat_recommendations(self, *args):
+        """Get seat recommendations based purely on price tiers
         
-        # Consider user preferences for seat ordering
-        if user_preferences:
-            # If user has favorite seats, prioritize them
-            favorite_seats = user_preferences.get('favorite_seats', [])
-            preferred_category = user_preferences.get('preferred_category')
-            preferred_position = user_preferences.get('seat_position')
-            
-            # Prioritize seats in user's favorite category and position
-            if preferred_category and preferred_category in categorized_seats:
-                for position in categorized_seats[preferred_category]:
-                    # First sort by price (lowest first)
-                    categorized_seats[preferred_category][position].sort(key=lambda x: x['price'])
-                    
-                    # Then prioritize favorite seats
-                    if favorite_seats:
-                        categorized_seats[preferred_category][position].sort(
-                            key=lambda x: 0 if x['number'] in favorite_seats else 1
-                        )
-            
-            # If user has a preferred position (window/aisle), prioritize that position
-            if preferred_position:
-                # Make sure to place user's preferred position first when displayed
-                for category in categorized_seats:
-                    if preferred_position in categorized_seats[category] and favorite_seats:
-                        categorized_seats[category][preferred_position].sort(
-                            key=lambda x: 0 if x['number'] in favorite_seats else 1
-                        )
+        This function can be called in two ways:
+        1. get_seat_recommendations(trip_id, source_id, destination_id)
+        2. get_seat_recommendations(seats_data, ticket_count, user_preferences)
+        """
+        # Determine which calling pattern is being used
+        if len(args) == 3 and isinstance(args[0], str):
+            # First pattern: (trip_id, source_id, destination_id)
+            trip_id, source_id, destination_id = args
+            seat_data = await self.fetch_seats(trip_id, source_id, destination_id)
         else:
-            # Without user preferences, just sort by price
-            for category in categorized_seats:
-                for position in categorized_seats[category]:
-                    categorized_seats[category][position].sort(key=lambda x: x['price'])
+            # Second pattern: (seats_data, ticket_count, user_preferences)
+            seat_data = args[0]  # seats_data is the first argument
         
-        return categorized_seats
+        # Initialize category containers
+        categories = {
+            "Premium": {"window": [], "aisle": []},
+            "Reasonable": {"window": [], "aisle": []},
+            "Budget-Friendly": {"window": [], "aisle": []}
+        }
+        
+        # Filter available seats
+        available_seats = [seat for seat in seat_data.get('seats', []) 
+                        if not seat.get('isOccupied', False) and 
+                        seat.get('availabilityStatus', '') in ['A', 'M', 'F']]
+        
+        # Extract all prices for available seats
+        prices = [float(seat.get('totalFare', 0)) for seat in available_seats]
+        if not prices:
+            return categories
+        
+        # Calculate price thresholds - use 33% for clear separation between categories
+        min_price = min(prices)
+        max_price = max(prices)
+        price_range = max_price - min_price
+        
+        # Define thresholds with minimum difference to handle small price ranges
+        budget_threshold = min_price + (price_range * 0.33) if price_range > 10 else min_price + 50
+        premium_threshold = max_price - (price_range * 0.33) if price_range > 10 else max_price - 50
+        
+        # Create separate window and aisle seat lists
+        window_seats = []
+        aisle_seats = []
+        
+        # Track all assigned seats to prevent duplication
+        assigned_seats = set()
+        
+        for seat in available_seats:
+            try:
+                seat_number = int(seat.get('seatName', '0'))
+                price = float(seat.get('totalFare', 0))
+                
+                # Skip invalid seats
+                if seat_number <= 0:
+                    continue
+                
+                seat_data = {
+                    "number": seat_number,
+                    "price": price
+                }
+                
+                # Categorize by position
+                if seat_number in self.window_seats:
+                    window_seats.append(seat_data)
+                elif seat_number in self.aisle_seats:
+                    aisle_seats.append(seat_data)
+            except (ValueError, TypeError):
+                continue
+        
+        # Sort both lists by price
+        window_seats.sort(key=lambda s: s["price"])
+        aisle_seats.sort(key=lambda s: s["price"])
+        
+        # Distribute window seats into categories based on price
+        for seat in window_seats:
+            if seat["number"] in assigned_seats:
+                continue
+                
+            price = seat["price"]
+            if price <= budget_threshold:
+                categories["Budget-Friendly"]["window"].append(seat)
+            elif price >= premium_threshold:
+                categories["Premium"]["window"].append(seat)
+            else:
+                categories["Reasonable"]["window"].append(seat)
+                
+            assigned_seats.add(seat["number"])
+        
+        # Distribute aisle seats into categories based on price
+        for seat in aisle_seats:
+            if seat["number"] in assigned_seats:
+                continue
+                
+            price = seat["price"]
+            if price <= budget_threshold:
+                categories["Budget-Friendly"]["aisle"].append(seat)
+            elif price >= premium_threshold:
+                categories["Premium"]["aisle"].append(seat)
+            else:
+                categories["Reasonable"]["aisle"].append(seat)
+                
+            assigned_seats.add(seat["number"])
+        
+        # Ensure each category has at least one seat of each type if possible
+        # Only if a category is completely empty, try to borrow from middle category
+        
+        # For window seats
+        if not categories["Budget-Friendly"]["window"] and categories["Reasonable"]["window"]:
+            # For Budget-Friendly, choose the cheapest seat from Reasonable
+            seat_to_move = min(categories["Reasonable"]["window"], key=lambda s: s["price"])
+            categories["Budget-Friendly"]["window"].append(seat_to_move)
+            # Remove from Reasonable
+            categories["Reasonable"]["window"] = [
+                s for s in categories["Reasonable"]["window"] 
+                if s["number"] != seat_to_move["number"]
+            ]
+        
+        # For Premium, if empty, move most expensive seat from Reasonable
+        if not categories["Premium"]["window"] and categories["Reasonable"]["window"]:
+            seat_to_move = max(categories["Reasonable"]["window"], key=lambda s: s["price"])
+            categories["Premium"]["window"].append(seat_to_move)
+            # Remove from Reasonable
+            categories["Reasonable"]["window"] = [
+                s for s in categories["Reasonable"]["window"] 
+                if s["number"] != seat_to_move["number"]
+            ]
+        
+        # Same for aisle seats
+        if not categories["Budget-Friendly"]["aisle"] and categories["Reasonable"]["aisle"]:
+            seat_to_move = min(categories["Reasonable"]["aisle"], key=lambda s: s["price"])
+            categories["Budget-Friendly"]["aisle"].append(seat_to_move)
+            # Remove from Reasonable
+            categories["Reasonable"]["aisle"] = [
+                s for s in categories["Reasonable"]["aisle"] 
+                if s["number"] != seat_to_move["number"]
+            ]
+        
+        if not categories["Premium"]["aisle"] and categories["Reasonable"]["aisle"]:
+            seat_to_move = max(categories["Reasonable"]["aisle"], key=lambda s: s["price"])
+            categories["Premium"]["aisle"].append(seat_to_move)
+            # Remove from Reasonable
+            categories["Reasonable"]["aisle"] = [
+                s for s in categories["Reasonable"]["aisle"] 
+                if s["number"] != seat_to_move["number"]
+            ]
+        
+        # Final verification step to ensure no duplicates
+        seen_seats = {}
+        for category in categories:
+            for position in ["window", "aisle"]:
+                unique_seats = []
+                for seat in categories[category][position]:
+                    seat_num = seat["number"]
+                    if seat_num not in seen_seats:
+                        seen_seats[seat_num] = f"{category}-{position}"
+                        unique_seats.append(seat)
+                    else:
+                        print(f"Preventing duplicate: Seat {seat_num} already in {seen_seats[seat_num]}")
+                categories[category][position] = unique_seats
+        
+        # Limit each category to a reasonable number of recommendations
+        max_recommendations = 3
+        for category in categories:
+            for position in ["window", "aisle"]:
+                categories[category][position] = categories[category][position][:max_recommendations]
+        
+        return categories
     
     def _build_direct_context_from_api_data(self, api_data, query, context):
         if not api_data:
@@ -2373,6 +2976,23 @@ class FreshBusAssistant:
         user_source = context.get('user_requested_source')
         user_dest = context.get('user_requested_destination')
         use_user_direction = (user_source and user_dest)
+        
+        # Handle invalid route first
+        if api_data.get("invalid_route"):
+            invalid_route = api_data["invalid_route"]
+            source = invalid_route["requested_source"].capitalize()
+            destination = invalid_route["requested_destination"].capitalize()
+            
+            context_parts.append(f"\nINVALID ROUTE REQUESTED: {source} to {destination}")
+            context_parts.append("We don't currently operate bus services on this route.")
+            context_parts.append("\nWe offer the following routes:")
+            for route in invalid_route["valid_routes"]:
+                context_parts.append(f"• {route}")
+            context_parts.append("\nWould you like to book a ticket for one of these routes instead?")
+            context_parts.append("You can also check the Fresh Bus website/app for updates on other routes.")
+            
+            # Return immediately to avoid processing other data
+            return "\n".join(context_parts)
         
         # Handle trip ended status first (highest priority)
         if api_data.get("eta_data") and api_data["eta_data"].get("message") == "This trip has ended":
@@ -2754,6 +3374,302 @@ class FreshBusAssistant:
         
         # Build final context string
         return "\n".join(context_parts)
+        
+        # Standard bus search results
+        if api_data.get("trips"):
+            trips = api_data.get("trips", [])
+            trip_count = len(trips)
+            
+            # Add emphatic trip count information
+            context_parts.append(f"IMPORTANT: There are EXACTLY {trip_count} unique bus services available.")
+            if trip_count == 1:
+                context_parts.append("There is ONLY ONE bus service available. Do not display or invent multiple options.")
+            
+            # List trip IDs for verification
+            tripids = [trip.get('tripid') for trip in trips]
+            context_parts.append(f"The unique Trip IDs are: {', '.join(str(tid) for tid in tripids)}")
+            
+            # Extract source and destination based on either user request or API data
+            if trips:
+                # Get API direction
+                api_sources = set(trip.get('source', 'Unknown') for trip in trips)
+                api_destinations = set(trip.get('destination', 'Unknown') for trip in trips)
+                
+                # Determine which direction to display
+                if use_user_direction:
+                    display_source = user_source
+                    display_destination = user_dest
+                    direction_note = f"USER REQUESTED DIRECTION: Buses requested FROM {display_source} TO {display_destination}. Showing available bus data for this route."
+                else:
+                    display_source = next(iter(api_sources)) if api_sources else "Unknown"
+                    display_destination = next(iter(api_destinations)) if api_destinations else "Unknown"
+                    direction_note = f"ROUTE INFORMATION: Buses available FROM {display_source} TO {display_destination}."
+                
+                context_parts.append(direction_note)
+            
+            context_parts.append("\nAvailable bus options:")
+            for i, trip in enumerate(trips):
+                # Add tripid to each bus listing to ensure uniqueness
+                context_parts.append(f"Bus #{i+1} - Trip ID: {trip.get('tripid', 'Unknown')}")
+                
+                # Handle time conversion properly
+                boarding_time = "N/A"
+                if "boardingtime" in trip:
+                    try:
+                        dt = datetime.fromisoformat(trip["boardingtime"].replace('Z', '+00:00'))
+                        ist_dt = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
+                        boarding_time = ist_dt.strftime("%I:%M %p IST")
+                    except:
+                        boarding_time = trip.get("boardingtime", "").split("T")[1].split(".")[0] + " UTC"
+                    
+                dropping_time = "N/A"
+                if "droppingtime" in trip:
+                    try:
+                        dt = datetime.fromisoformat(trip["droppingtime"].replace('Z', '+00:00'))
+                        ist_dt = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
+                        dropping_time = ist_dt.strftime("%I:%M %p IST")
+                    except:
+                        dropping_time = trip.get("droppingtime", "").split("T")[1].split(".")[0] + " UTC"
+                
+                # Calculate duration
+                duration = ""
+                if "boardingtime" in trip and "droppingtime" in trip:
+                    try:
+                        boarding_dt = datetime.fromisoformat(trip["boardingtime"].replace('Z', '+00:00'))
+                        dropping_dt = datetime.fromisoformat(trip["droppingtime"].replace('Z', '+00:00'))
+                        duration_mins = (dropping_dt - boarding_dt).total_seconds() / 60
+                        hours = int(duration_mins // 60)
+                        mins = int(duration_mins % 60)
+                        duration = f"{hours}h {mins}m"
+                    except:
+                        duration = ""
+                
+                # Get source and destination based on user's request or API data
+                if use_user_direction:
+                    source = user_source
+                    destination = user_dest
+                else:
+                    source = trip.get('source', 'Unknown')
+                    destination = trip.get('destination', 'Unknown')
+                
+                # Add bus information with correct direction
+                context_parts.append(
+                    f"Option {i+1}: Bus {trip.get('servicenumber', 'Unknown')}, " +
+                    f"Route: FROM {source} TO {destination}, " +
+                    f"departure: {boarding_time}, arrival: {dropping_time}, " +
+                    (f"duration: {duration}, " if duration else "") +
+                    f"price: ₹{trip.get('fare', 'Unknown')}, " +
+                    f"bus type: {trip.get('vehicletype', 'Standard')}, " +
+                    f"available seats: {trip.get('availableseats', 'N/A')}"
+                )
+                
+                # Get boarding and dropping points
+                boarding_point = trip.get('boardingpointname', 'Unknown boarding point')
+                dropping_point = trip.get('droppingpointname', 'Unknown dropping point')
+                
+                # Swap boarding and dropping points if user direction is opposite of API direction
+                if use_user_direction:
+                    api_source = trip.get('source', '')
+                    api_dest = trip.get('destination', '')
+                    if (user_source.lower() != api_source.lower() or 
+                        user_dest.lower() != api_dest.lower()):
+                        # Swap boarding and dropping points
+                        boarding_point, dropping_point = dropping_point, boarding_point
+                
+                context_parts.append(f"  → Boards at: {boarding_point}")
+                context_parts.append(f"  → Drops at: {dropping_point}")
+        
+        # Continue with standard context building for other API data
+        if api_data.get("boarding_points"):
+            context_parts.append("\nAvailable boarding points:")
+            for point in api_data["boarding_points"]:
+                bp_info = point.get('boardingPoint', {})
+                name = bp_info.get('name', 'Unknown')
+                landmark = bp_info.get('landmark', '')
+                time = None
+                if 'currentTime' in point:
+                    dt = datetime.fromisoformat(point["currentTime"].replace('Z', '+00:00'))
+                    ist_dt = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
+                    time = ist_dt.strftime("%I:%M %p")
+                context_parts.append(
+                    f"• {name}" + (f" (near {landmark})" if landmark else "") + (f", time: {time}" if time else "")
+                )
+        
+        if api_data.get("nearest_boarding_points"):
+            context_parts.append("\nNearest boarding points to your location:")
+            for point in api_data["nearest_boarding_points"]:
+                context_parts.append(
+                    f"• {point['name']} ({point['distance_km']} km away)" + 
+                    (f" - Near {point['landmark']}" if point.get('landmark') else "")
+                )
+        
+        if api_data.get("dropping_points"):
+            context_parts.append("\nAvailable dropping points:")
+            for point in api_data["dropping_points"]:
+                dp_info = point.get('droppingPoint', {})
+                name = dp_info.get('name', 'Unknown')
+                landmark = dp_info.get('landmark', '')
+                time = None
+                if 'currentTime' in point:
+                    dt = datetime.fromisoformat(point["currentTime"].replace('Z', '+00:00'))
+                    ist_dt = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
+                    time = ist_dt.strftime("%I:%M %p")
+                context_parts.append(
+                    f"• {name}" + (f" (near {landmark})" if landmark else "") + (f", time: {time}" if time else "")
+                )
+        
+        if api_data.get("recommendations"):
+            context_parts.append("\nAvailable seat categories:")
+            for category, positions in api_data["recommendations"].items():
+                window_count = len(positions['window'])
+                aisle_count = len(positions['aisle'])
+                if window_count or aisle_count:
+                    context_parts.append(f"• {category}: {window_count} window, {aisle_count} aisle seats available")
+                    if window_count > 0:
+                        seat_examples = [f"#{s['number']} (₹{s['price']})" for s in positions['window'][:3]]
+                        context_parts.append(f"  Window seats: {', '.join(seat_examples)}")
+                    if aisle_count > 0:
+                        seat_examples = [f"#{s['number']} (₹{s['price']})" for s in positions['aisle'][:3]]
+                        context_parts.append(f"  Aisle seats: {', '.join(seat_examples)}")
+        
+        if api_data.get("selected_seats"):
+            context_parts.append(f"\nSelected seats: {', '.join(map(str, api_data['selected_seats']))}")
+        
+        if api_data.get("suggested_boarding"):
+            context_parts.append(f"\nSuggested boarding point: {api_data['suggested_boarding']}")
+        
+        if api_data.get("suggested_dropping"):
+            context_parts.append(f"\nSuggested dropping point: {api_data['suggested_dropping']}")
+        
+        context_parts.append(f"\nNumber of passengers: {api_data.get('ticket_count', 1)}")
+        
+        # Add time zone conversion reminder
+        context_parts.append("\nTIME ZONE REMINDER: All times are converted from UTC to IST by adding 5 hours and 30 minutes.")
+        
+        # Add note about user requested direction
+        if use_user_direction:
+            context_parts.append(f"\nDIRECTION NOTE: User requested to book a ticket FROM {user_source} TO {user_dest}. Show this direction in the response.")
+        
+        # Add user preferences information if available
+        if api_data.get("user_preferences"):
+            user_prefs = api_data.get("user_preferences")
+            context_parts.append("\nUSER PREFERENCES:")
+            
+            if user_prefs.get("favorite_seats"):
+                context_parts.append(f"• Favorite seats: {', '.join(map(str, user_prefs['favorite_seats']))}")
+            
+            if user_prefs.get("seat_position"):
+                context_parts.append(f"• Preferred position: {user_prefs['seat_position']}")
+                
+            if user_prefs.get("preferred_category"):
+                context_parts.append(f"• Preferred category: {user_prefs['preferred_category']}")
+                
+            if user_prefs.get("recent_routes"):
+                context_parts.append(f"• Recent routes: {', '.join(user_prefs['recent_routes'])}")
+        
+        # Add ETA data if available (but not trip ended, which is handled above)
+        if api_data.get("eta_data") and not api_data["eta_data"].get("message") == "This trip has ended":
+            context_parts.append("\nBUS TRACKING INFORMATION:")
+            eta_data = api_data.get("eta_data")
+            
+            if "message" in eta_data:
+                context_parts.append(f"ETA Status: {eta_data['message']}")
+            else:
+                # Format proper ETA data with bus location
+                if "currentLocation" in eta_data:
+                    location = eta_data["currentLocation"]
+                    context_parts.append(f"Current Bus Location: {location}")
+                
+                if "estimatedArrival" in eta_data:
+                    eta = eta_data["estimatedArrival"]
+                    context_parts.append(f"Estimated Arrival Time: {eta}")
+                
+                if "delayMinutes" in eta_data:
+                    delay = eta_data["delayMinutes"]
+                    context_parts.append(f"Delay: {delay} minutes")
+            
+            context_parts.append(f"Trip ID: {api_data.get('trip_id', 'Unknown')}")
+        
+        # Add matched ticket information
+        if api_data.get("matched_ongoing_ticket"):
+            ticket = api_data["matched_ongoing_ticket"]
+            context_parts.append("\nONGOING JOURNEY:")
+            context_parts.append(f"Journey from {ticket.get('source', 'Unknown')} to {ticket.get('destination', 'Unknown')}")
+            context_parts.append(f"Date: {ticket.get('journeyDate', 'Unknown')}")
+            context_parts.append(f"Trip ID: {ticket.get('tripId', 'Unknown')}")
+            
+            # Add ETA data if available
+            if "eta_data" in ticket:
+                eta_data = ticket["eta_data"]
+                
+                if "message" in eta_data and eta_data["message"] == "This trip has ended":
+                    context_parts.append("Status: This trip has already ended.")
+                elif "message" in eta_data:
+                    context_parts.append(f"Status: {eta_data['message']}")
+                else:
+                    if "currentLocation" in eta_data:
+                        context_parts.append(f"Current Location: {eta_data['currentLocation']}")
+                    if "estimatedArrival" in eta_data:
+                        context_parts.append(f"Estimated Arrival: {eta_data['estimatedArrival']}")
+                    if "delayMinutes" in eta_data:
+                        context_parts.append(f"Delay: {eta_data['delayMinutes']} minutes")
+        
+        if api_data.get("matched_completed_ticket"):
+            ticket = api_data["matched_completed_ticket"]
+            context_parts.append("\nCOMPLETED JOURNEY:")
+            context_parts.append(f"Journey from {ticket.get('source', 'Unknown')} to {ticket.get('destination', 'Unknown')}")
+            context_parts.append(f"Date: {ticket.get('journeyDate', 'Unknown')}")
+            context_parts.append(f"Trip ID: {ticket.get('tripId', 'Unknown')}")
+            context_parts.append("Status: This journey has been completed.")
+            
+            # Add NPS/feedback data if available
+            if "nps_data" in ticket:
+                nps_data = ticket["nps_data"]
+                
+                context_parts.append("\nFEEDBACK QUESTIONS:")
+                if isinstance(nps_data, list) and len(nps_data) > 0:
+                    feedback = nps_data[0]  # Use first feedback item
+                    if "questions" in feedback:
+                        for question in feedback["questions"]:
+                            context_parts.append(f"• {question.get('questionText', 'Rate your journey')}")
+                elif nps_data.get("questions"):
+                    for question in nps_data["questions"]:
+                        context_parts.append(f"• {question.get('questionText', 'Rate your journey')}")
+                else:
+                    context_parts.append(f"• {nps_data.get('message', 'Please rate your journey')}")
+        
+        if api_data.get("matched_upcoming_ticket"):
+            ticket = api_data["matched_upcoming_ticket"]
+            context_parts.append("\nUPCOMING JOURNEY:")
+            context_parts.append(f"Journey from {ticket.get('source', 'Unknown')} to {ticket.get('destination', 'Unknown')}")
+            context_parts.append(f"Date: {ticket.get('journeyDate', 'Unknown')}")
+            context_parts.append(f"Trip ID: {ticket.get('tripId', 'Unknown')}")
+            context_parts.append("Status: This journey is scheduled for the future.")
+        
+        # Add user profile information if available
+        if api_data.get("user_profile"):
+            profile = api_data["user_profile"]
+            context_parts.append("\nUSER PROFILE INFORMATION:")
+            
+            # Add basic info
+            for field in ['name', 'email', 'mobile', 'gender']:
+                if profile.get(field):
+                    context_parts.append(f"• {field.capitalize()}: {profile[field]}")
+            
+            # Add address if available
+            if profile.get('address'):
+                context_parts.append(f"• Address: {profile['address']}")
+                
+            # Add loyalty coins if available
+            if profile.get('availableCoins'):
+                context_parts.append(f"• Available Coins: {profile['availableCoins']}")
+                
+            # Add preferred language if available
+            if profile.get('preferredLanguage'):
+                context_parts.append(f"• Preferred Language: {profile['preferredLanguage']}")
+        
+        # Build final context string
+        return "\n".join(context_parts)
     
     def _generate_fallback_response(self, api_data, query, context):
         """Generate a fallback response when the LLM is not available or fails"""
@@ -2771,6 +3687,21 @@ class FreshBusAssistant:
         # Handle what/who are you questions
         if ("what are you" in query_lower or "who are you" in query_lower):
             return "I'm Ṧ.AI, the Fresh Bus travel assistant. I can help you find buses, check schedules, book tickets, and track your journeys. How can I assist you today?"
+        
+        # Handle invalid route first
+        if api_data and api_data.get("invalid_route"):
+            invalid_route = api_data["invalid_route"]
+            source = invalid_route["requested_source"].capitalize()
+            destination = invalid_route["requested_destination"].capitalize()
+            
+            fallback_parts.append(f"I'm sorry, but we don't currently operate bus services from {source} to {destination}.")
+            fallback_parts.append("\nWe offer the following routes:")
+            for route in invalid_route["valid_routes"]:
+                fallback_parts.append(f"• {route}")
+            fallback_parts.append("\nWould you like to book a ticket for one of these routes instead?")
+            fallback_parts.append("Or you can check the Fresh Bus website/app for updates on other routes.")
+            
+            return " ".join(fallback_parts)
         
         # Handle the case when no trips are found
         if api_data and api_data.get("no_trips_info"):
@@ -2932,75 +3863,28 @@ class FreshBusAssistant:
             
             return " ".join(fallback_parts)
         
-        # Generic fallback response
-        fallback_parts.append("I'm currently having trouble processing your request. Here's what I understand:")
-        
+        # Generic fallback based on what we have in context
         if context.get('user_requested_source') and context.get('user_requested_destination'):
-            fallback_parts.append(f"\nYou want to travel from {context['user_requested_source']} to {context['user_requested_destination']}.")
-        
-        if context.get('last_date'):
-            fallback_parts.append(f"Date of travel: {context['last_date']}")
+            source = context['user_requested_source']
+            destination = context['user_requested_destination']
+            date = context.get('last_date', 'tomorrow')
             
-        fallback_parts.append("\nPlease try again with a simple request like 'Show buses from [source] to [destination]' or 'Book a ticket to [destination]'.")
-        
-        return " ".join(fallback_parts)
-        
-        # Handle trip ended status
-        if api_data.get("eta_data") and api_data["eta_data"].get("message") == "This trip has ended":
-            fallback_parts.append("\n✓ This trip has already ended.")
-            fallback_parts.append("The bus has completed its journey.")
+            if isinstance(date, str) and "T" in date:
+                # Format ISO date string
+                try:
+                    dt = datetime.fromisoformat(date.replace('Z', '+00:00'))
+                    date = dt.strftime("%A, %B %d")
+                except:
+                    # Keep as is if parsing fails
+                    date = date.split("T")[0]
             
-            # Add feedback info if available
-            if api_data.get("feedback_data"):
-                fallback_parts.append("\nPlease consider providing feedback on your journey through the Fresh Bus app.")
+            if api_data and api_data.get("trips"):
+                trips = api_data["trips"]
+                trip_count = len(trips)
                 
-            return " ".join(fallback_parts)
-        
-        # Handle bus search results
-        if api_data.get("trips"):
-            trips = api_data.get("trips", [])
-            
-            # Get source and destination
-            source = context.get('user_requested_source') or trips[0].get('source', 'Unknown')
-            destination = context.get('user_requested_destination') or trips[0].get('destination', 'Unknown')
-            
-            fallback_parts.append(f"\nI found {len(trips)} bus{'es' if len(trips) > 1 else ''} from {source} to {destination}.")
-            
-            for i, trip in enumerate(trips[:3]):  # Limit to first 3 buses
-                fallback_parts.append("\n")
-                
-                # Format basic trip info
-                boarding_time = "Unknown"
-                if "boardingtime" in trip:
-                    try:
-                        dt = datetime.fromisoformat(trip["boardingtime"].replace('Z', '+00:00'))
-                        ist_dt = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
-                        boarding_time = ist_dt.strftime("%I:%M %p")
-                    except:
-                        boarding_time = "Unknown"
-                
-                dropping_time = "Unknown"
-                if "droppingtime" in trip:
-                    try:
-                        dt = datetime.fromisoformat(trip["droppingtime"].replace('Z', '+00:00'))
-                        ist_dt = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
-                        dropping_time = ist_dt.strftime("%I:%M %p")
-                    except:
-                        dropping_time = "Unknown"
-                
-                price = trip.get('fare', 'Unknown')
-                available_seats = trip.get('availableseats', 'Unknown')
-                
-                fallback_parts.append(f"Bus {i+1}: {boarding_time} - {dropping_time} | ₹{price} | {available_seats} seats available")
-                fallback_parts.append(f"Boarding: {trip.get('boardingpointname', 'Unknown')}")
-                fallback_parts.append(f"Dropping: {trip.get('droppingpointname', 'Unknown')}")
-            
-            if len(trips) > 3:
-                fallback_parts.append(f"\n...and {len(trips) - 3} more buses available.")
-                
-            fallback_parts.append("\nPlease ask for more details about any specific bus or provide more information to refine your search.")
-            
-            return " ".join(fallback_parts)
+                return f"I found {trip_count} bus{'es' if trip_count > 1 else ''} from {source} to {destination} for {date}. You can view the details and choose your preferred bus."
+            else:
+                return f"I'm searching for buses from {source} to {destination} for {date}. Please provide any additional preferences you might have for your journey."
         
         # Generic fallback response
         fallback_parts.append("I'm currently having trouble processing your request. Here's what I understand:")
@@ -3014,6 +3898,69 @@ class FreshBusAssistant:
         fallback_parts.append("\nPlease try again with a simple request like 'Show buses from [source] to [destination]' or 'Book a ticket to [destination]'.")
         
         return " ".join(fallback_parts)
+    
+    async def fetch_all_boarding_dropping_points(self, trip_id, source_id, destination_id):
+        """Fetch all boarding and dropping points for a trip"""
+        if not self.http_session:
+            await self.init_http_session()
+        
+        # Initialize results
+        result = {
+            "boarding_points": [],
+            "dropping_points": []
+        }
+        
+        # Fetch boarding points
+        try:
+            boarding_url = f"{self.BASE_URL}/trips/{trip_id}/boardings/{source_id}"
+            print(f"Fetching all boarding points: {boarding_url}")
+            
+            async with self.http_session.get(boarding_url) as response:
+                if response.status == 200:
+                    boarding_data = await response.json()
+                    # Format boarding points into a simplified structure
+                    for point in boarding_data:
+                        bp_info = point.get('boardingPoint', {})
+                        formatted_point = {
+                            "name": bp_info.get('name', 'Unknown'),
+                            "landmark": bp_info.get('landmark', ''),
+                            "time": point.get('time', ''),
+                            "latitude": bp_info.get('latitude'),
+                            "longitude": bp_info.get('longitude'),
+                            "address": bp_info.get('address', '')
+                        }
+                        result["boarding_points"].append(formatted_point)
+                else:
+                    print(f"Failed to fetch boarding points: Status {response.status}")
+        except Exception as e:
+            print(f"Error fetching boarding points: {e}")
+        
+        # Fetch dropping points
+        try:
+            dropping_url = f"{self.BASE_URL}/trips/{trip_id}/droppings"
+            print(f"Fetching all dropping points: {dropping_url}")
+            
+            async with self.http_session.get(dropping_url) as response:
+                if response.status == 200:
+                    dropping_data = await response.json()
+                    # Format dropping points into a simplified structure
+                    for point in dropping_data:
+                        dp_info = point.get('droppingPoint', {})
+                        formatted_point = {
+                            "name": dp_info.get('name', 'Unknown'),
+                            "landmark": dp_info.get('landmark', ''),
+                            "time": point.get('time', ''),
+                            "latitude": dp_info.get('latitude'),
+                            "longitude": dp_info.get('longitude'),
+                            "address": dp_info.get('address', '')
+                        }
+                        result["dropping_points"].append(formatted_point)
+                else:
+                    print(f"Failed to fetch dropping points: Status {response.status}")
+        except Exception as e:
+            print(f"Error fetching dropping points: {e}")
+        
+        return result
     
     async def generate_response(self, query, session_id=None, user_gender=None, user_location=None, detected_language=None, provider=None, model=None):
         """Generate a response to a user query"""
@@ -3235,204 +4182,223 @@ class FreshBusAssistant:
         
         # Handle standard bus booking flows
         elif context.get('user_requested_source') and context.get('user_requested_destination'):
-            source_id = self.stations.get(context['user_requested_source'])
-            destination_id = self.stations.get(context['user_requested_destination'])
+            source = context['user_requested_source']
+            destination = context['user_requested_destination']
             
-            if source_id and destination_id:
-                # Check if looking for nearby boarding points
-                looking_for_boarding = any(phrase in query.lower() for phrase in ["boarding", "pickup", "pick up", "board", "pick-up", "station", "stop", "nearby", "close", "nearest"])
+            # Check if the route is valid
+            if not self.is_valid_route(source, destination):
+                # Create a response for invalid route
+                api_data["invalid_route"] = {
+                    "requested_source": source,
+                    "requested_destination": destination,
+                    "valid_routes": [
+                        "Hyderabad to Guntur/Vijayawada",
+                        "Bangalore to Tirupati/Chittoor",
+                        "Vijayawada to Hyderabad",
+                        "Guntur to Hyderabad"
+                    ]
+                }
+                print(f"Invalid route requested: {source} to {destination}")
+            else:
+                # Valid route, proceed with fetching trip data
+                source_id = self.stations.get(source)
+                destination_id = self.stations.get(destination)
                 
-                # Check if looking for dropping points
-                looking_for_dropping = any(phrase in query.lower() for phrase in ["dropping", "drop", "drop-off", "drop off", "destination"])
-                
-                # Check if looking for seat selection
-                looking_for_seats = any(phrase in query.lower() for phrase in ["seat", "where", "sit", "book", "select", "window", "aisle"])
-                
-                # Get user's selected trip from context or detect from query
-                selected_trip = context.get('selected_bus')
-                
-                # If user doesn't have a selected trip but we have trips data, try to detect
-                if not selected_trip and 'last_trips' in context:
-                    trips = context['last_trips']
-                    selected_trip_index = self.detect_bus_selection(query, trips)
-                    if selected_trip_index is not None:
-                        selected_trip = trips[selected_trip_index]
-                        context['selected_bus'] = selected_trip
-                        print(f"Detected bus selection: {selected_trip_index}")
-                
-                # Check trip selection or seat selection in query
-                if not selected_trip and not api_data.get("trips"):
-                    # If no trips yet, fetch them
-                    date = context.get('last_date')
-                    # Ensure date is not None
-                    if date is None:
-                        date = self.parse_date(query)
-                        context['last_date'] = date
-                    trips = await self.fetch_trips(source_id, destination_id, date)
+                if source_id and destination_id:
+                    # Check if looking for nearby boarding points
+                    looking_for_boarding = any(phrase in query.lower() for phrase in ["boarding", "pickup", "pick up", "board", "pick-up", "station", "stop", "nearby", "close", "nearest"])
                     
-                    if trips:
-                        # Process trips as normal
-                        api_data["trips"] = trips
-                        context['last_trips'] = trips
+                    # Check if looking for dropping points
+                    looking_for_dropping = any(phrase in query.lower() for phrase in ["dropping", "drop", "drop-off", "drop off", "destination"])
+                    
+                    # Check if looking for seat selection
+                    looking_for_seats = any(phrase in query.lower() for phrase in ["seat", "where", "sit", "book", "select", "window", "aisle"])
+                    
+                    # Get user's selected trip from context or detect from query
+                    selected_trip = context.get('selected_bus')
+                    
+                    # If user doesn't have a selected trip but we have trips data, try to detect
+                    if not selected_trip and 'last_trips' in context:
+                        trips = context['last_trips']
+                        selected_trip_index = self.detect_bus_selection(query, trips)
+                        if selected_trip_index is not None:
+                            selected_trip = trips[selected_trip_index]
+                            context['selected_bus'] = selected_trip
+                            print(f"Detected bus selection: {selected_trip_index}")
+                    
+                    # Check trip selection or seat selection in query
+                    if not selected_trip and not api_data.get("trips"):
+                        # If no trips yet, fetch them
+                        date = context.get('last_date')
+                        # Ensure date is not None
+                        if date is None:
+                            date = self.parse_date(query)
+                            context['last_date'] = date
+                        trips = await self.fetch_trips(source_id, destination_id, date)
                         
-                        # Add user direction to API data
-                        api_data["user_direction"] = {
-                            "source": context['user_requested_source'],
-                            "destination": context['user_requested_destination'],
-                            "swap_points": False  # Never swap points for initial search
-                        }
-                        
-                        # If user has a location, find nearest boarding points
-                        if context.get('user_location'):
-                            boarding_points = []
+                        if trips:
+                            # Process trips as normal
+                            api_data["trips"] = trips
+                            context['last_trips'] = trips
                             
-                            # Check all trips and aggregate boarding points
-                            for trip in trips:
-                                trip_boarding_points = await self.fetch_boarding_points(trip.get('tripid'), source_id)
-                                boarding_points.extend(trip_boarding_points)
-                            
-                            if boarding_points:
-                                api_data["boarding_points"] = boarding_points
-                                
-                                # Get nearest boarding points
-                                nearest_points = self.get_nearest_boarding_points_info(
-                                    boarding_points, 
-                                    context['user_location'],
-                                    max_points=3
-                                )
-                                
-                                if nearest_points:
-                                    api_data["nearest_boarding_points"] = nearest_points
-                    else:
-                        # Handle case when no trips are found
-                        # Try reversing the direction
-                        print(f"No trips found from {context['user_requested_source']} to {context['user_requested_destination']}, trying reverse direction")
-                        reverse_trips = await self.fetch_trips(destination_id, source_id, date)
-                        
-                        if reverse_trips:
-                            print(f"Found {len(reverse_trips)} trips in reverse direction")
-                            
-                            # Store the trips with a note about reversed direction
-                            api_data["trips"] = reverse_trips
-                            context['last_trips'] = reverse_trips
-                            api_data["direction_reversed"] = True
-                            
-                            # Add user direction to API data, with swap_points=True
+                            # Add user direction to API data
                             api_data["user_direction"] = {
                                 "source": context['user_requested_source'],
                                 "destination": context['user_requested_destination'],
-                                "swap_points": True  # Swap points since direction is reversed
+                                "swap_points": False  # Never swap points for initial search
                             }
-                        else:
-                            # No trips found in either direction
-                            source_name = context['user_requested_source'].capitalize()
-                            destination_name = context['user_requested_destination'].capitalize()
-                            travel_date = date
                             
-                            formatted_date = None
-                            if travel_date:
-                                try:
-                                    formatted_date = datetime.fromisoformat(travel_date).strftime("%A, %B %d, %Y")
-                                except:
-                                    formatted_date = travel_date  # Use the raw date if parsing fails
-                            else:
-                                formatted_date = "the selected date"  # Default if no date
-                                                        
-                            # Provide a helpful message about no trips
-                            no_trips_message = f"I'm sorry, I couldn't find any buses from {source_name} to {destination_name} on {formatted_date}. This could be due to:"
-                            
-                            # Provide a helpful message about no trips
-                            no_trips_message = f"I'm sorry, I couldn't find any buses from {source_name} to {destination_name} on {formatted_date}. This could be due to:"
-                            no_trips_message += "\n\n1. No available services on this route for the selected date"
-                            no_trips_message += "\n2. All buses being fully booked"
-                            no_trips_message += "\n3. A temporary issue with our booking system"
-                            
-                            no_trips_message += "\n\nYou could try:"
-                            no_trips_message += f"\n• Checking a different date"
-                            no_trips_message += f"\n• Looking for buses to nearby destinations"
-                            no_trips_message += f"\n• Checking again in a few minutes if it's a temporary issue"
-                            
-                            # Set api_data with route information but no trips
-                            api_data["no_trips_info"] = {
-                                "source": source_name,
-                                "destination": destination_name,
-                                "date": formatted_date,
-                                "message": no_trips_message
-                            }
-                
-                # If user selected a specific trip and is asking about boarding/dropping points
-                if selected_trip:
-                    trip_id = selected_trip.get('tripid')
-                    
-                    # Only fetch if not already in context
-                    if looking_for_boarding and not api_data.get("boarding_points"):
-                        boarding_points = await self.fetch_boarding_points(trip_id, source_id)
-                        if boarding_points:
-                            api_data["boarding_points"] = boarding_points
-                            
-                            # If user has location, also get nearest boarding points
+                            # If user has a location, find nearest boarding points
                             if context.get('user_location'):
-                                nearest_points = self.get_nearest_boarding_points_info(
-                                    boarding_points, 
-                                    context['user_location'],
-                                    max_points=3
-                                )
+                                boarding_points = []
                                 
-                                if nearest_points:
-                                    api_data["nearest_boarding_points"] = nearest_points
+                                # Check all trips and aggregate boarding points
+                                for trip in trips:
+                                    trip_boarding_points = await self.fetch_boarding_points(trip.get('tripid'), source_id)
+                                    boarding_points.extend(trip_boarding_points)
+                                
+                                if boarding_points:
+                                    api_data["boarding_points"] = boarding_points
                                     
-                                # Suggest the nearest boarding point if available
-                                suggestion = self.suggest_boarding_point(
-                                    boarding_points,
-                                    context.get('user_location'),
-                                    context.get('last_boarding_point')
+                                    # Get nearest boarding points
+                                    nearest_points = self.get_nearest_boarding_points_info(
+                                        boarding_points, 
+                                        context['user_location'],
+                                        max_points=3
+                                    )
+                                    
+                                    if nearest_points:
+                                        api_data["nearest_boarding_points"] = nearest_points
+                        else:
+                            # Handle case when no trips are found
+                            # Try reversing the direction
+                            print(f"No trips found from {context['user_requested_source']} to {context['user_requested_destination']}, trying reverse direction")
+                            reverse_trips = await self.fetch_trips(destination_id, source_id, date)
+                            
+                            if reverse_trips:
+                                print(f"Found {len(reverse_trips)} trips in reverse direction")
+                                
+                                # Store the trips with a note about reversed direction
+                                api_data["trips"] = reverse_trips
+                                context['last_trips'] = reverse_trips
+                                api_data["direction_reversed"] = True
+                                
+                                # Add user direction to API data, with swap_points=True
+                                api_data["user_direction"] = {
+                                    "source": context['user_requested_source'],
+                                    "destination": context['user_requested_destination'],
+                                    "swap_points": True  # Swap points since direction is reversed
+                                }
+                            else:
+                                # No trips found in either direction
+                                source_name = context['user_requested_source'].capitalize()
+                                destination_name = context['user_requested_destination'].capitalize()
+                                travel_date = date
+                                
+                                formatted_date = None
+                                if travel_date:
+                                    try:
+                                        formatted_date = datetime.fromisoformat(travel_date).strftime("%A, %B %d, %Y")
+                                    except:
+                                        formatted_date = travel_date  # Use the raw date if parsing fails
+                                else:
+                                    formatted_date = "the selected date"  # Default if no date
+                                                            
+                                # Provide a helpful message about no trips
+                                no_trips_message = f"I'm sorry, I couldn't find any buses from {source_name} to {destination_name} on {formatted_date}. This could be due to:"
+                                
+                                # Provide a helpful message about no trips
+                                no_trips_message = f"I'm sorry, I couldn't find any buses from {source_name} to {destination_name} on {formatted_date}. This could be due to:"
+                                no_trips_message += "\n\n1. No available services on this route for the selected date"
+                                no_trips_message += "\n2. All buses being fully booked"
+                                no_trips_message += "\n3. A temporary issue with our booking system"
+                                
+                                no_trips_message += "\n\nYou could try:"
+                                no_trips_message += f"\n• Checking a different date"
+                                no_trips_message += f"\n• Looking for buses to nearby destinations"
+                                no_trips_message += f"\n• Checking again in a few minutes if it's a temporary issue"
+                                
+                                # Set api_data with route information but no trips
+                                api_data["no_trips_info"] = {
+                                    "source": source_name,
+                                    "destination": destination_name,
+                                    "date": formatted_date,
+                                    "message": no_trips_message
+                                }
+                    
+                    # If user selected a specific trip and is asking about boarding/dropping points
+                    if selected_trip:
+                        trip_id = selected_trip.get('tripid')
+                        
+                        # Only fetch if not already in context
+                        if looking_for_boarding and not api_data.get("boarding_points"):
+                            boarding_points = await self.fetch_boarding_points(trip_id, source_id)
+                            if boarding_points:
+                                api_data["boarding_points"] = boarding_points
+                                
+                                # If user has location, also get nearest boarding points
+                                if context.get('user_location'):
+                                    nearest_points = self.get_nearest_boarding_points_info(
+                                        boarding_points, 
+                                        context['user_location'],
+                                        max_points=3
+                                    )
+                                    
+                                    if nearest_points:
+                                        api_data["nearest_boarding_points"] = nearest_points
+                                        
+                                    # Suggest the nearest boarding point if available
+                                    suggestion = self.suggest_boarding_point(
+                                        boarding_points,
+                                        context.get('user_location'),
+                                        context.get('last_boarding_point')
+                                    )
+                                    
+                                    if suggestion:
+                                        api_data["suggested_boarding"] = suggestion
+                                        context['last_boarding_point'] = suggestion
+                        
+                        # Only fetch if not already in context
+                        if looking_for_dropping and not api_data.get("dropping_points"):
+                            dropping_points = await self.fetch_dropping_points(trip_id)
+                            if dropping_points:
+                                api_data["dropping_points"] = dropping_points
+                                
+                                # Suggest a dropping point
+                                suggestion = self.suggest_dropping_point(
+                                    dropping_points,
+                                    context.get('last_dropping_point')
                                 )
                                 
                                 if suggestion:
-                                    api_data["suggested_boarding"] = suggestion
-                                    context['last_boarding_point'] = suggestion
-                    
-                    # Only fetch if not already in context
-                    if looking_for_dropping and not api_data.get("dropping_points"):
-                        dropping_points = await self.fetch_dropping_points(trip_id)
-                        if dropping_points:
-                            api_data["dropping_points"] = dropping_points
-                            
-                            # Suggest a dropping point
-                            suggestion = self.suggest_dropping_point(
-                                dropping_points,
-                                context.get('last_dropping_point')
-                            )
-                            
-                            if suggestion:
-                                api_data["suggested_dropping"] = suggestion
-                                context['last_dropping_point'] = suggestion
-                    
-                    # Only fetch if not already in context
-                    if looking_for_seats and not api_data.get("recommendations"):
-                        seats_data = await self.fetch_seats(trip_id, source_id, destination_id)
-                        if seats_data:
-                            # Get user preferences (either from auth or session)
-                            user_preferences = None
-                            
-                            # If user is authenticated and mobile number available
-                            if user_authenticated and user_mobile:
-                                user_preferences = await self.fetch_user_preferences(user_mobile, auth_token)
-                                api_data["user_preferences"] = user_preferences
-                            
-                            # Get recommendations
-                            recommendations = self.get_seat_recommendations(
-                                seats_data, 
-                                context.get('ticket_count', 1),
-                                user_preferences
-                            )
-                            
-                            if recommendations:
-                                api_data["recommendations"] = recommendations
+                                    api_data["suggested_dropping"] = suggestion
+                                    context['last_dropping_point'] = suggestion
+                        
+                        # Only fetch if not already in context
+                        if looking_for_seats and not api_data.get("recommendations"):
+                            seats_data = await self.fetch_seats(trip_id, source_id, destination_id)
+                            if seats_data:
+                                # Get user preferences (either from auth or session)
+                                user_preferences = None
                                 
-                    # Add preferences to api_data even if seats weren't fetched
-                    api_data["window_preference"] = window_pref
-                    api_data["aisle_preference"] = aisle_pref
+                                # If user is authenticated and mobile number available
+                                if user_authenticated and user_mobile:
+                                    user_preferences = await self.fetch_user_preferences(user_mobile, auth_token)
+                                    api_data["user_preferences"] = user_preferences
+                                
+                                # Get recommendations
+                                recommendations = await self.get_seat_recommendations(
+                                    seats_data, 
+                                    context.get('ticket_count', 1),
+                                    user_preferences
+                                )
+                                
+                                if recommendations:
+                                    api_data["recommendations"] = recommendations
+                                    
+                        # Add preferences to api_data even if seats weren't fetched
+                        api_data["window_preference"] = window_pref
+                        api_data["aisle_preference"] = aisle_pref
 
         api_data["ticket_count"] = context.get('ticket_count', 1)
         
@@ -3510,11 +4476,51 @@ class FreshBusAssistant:
         # Check if this is a bus listing request and we have trip data
         is_bus_listing_request = any(kw in query.lower() for kw in ["book", "find", "search", "trip", "bus", "ticket"])
         
+        # Handle invalid route with direct response
+        if api_data.get("invalid_route"):
+            invalid_route = api_data["invalid_route"]
+            source = invalid_route["requested_source"].capitalize()
+            destination = invalid_route["requested_destination"].capitalize()
+            
+            direct_response = f"I'm sorry, but we don't currently operate bus services from {source} to {destination}.\n\n"
+            direct_response += "We offer the following routes:\n"
+            for route in invalid_route["valid_routes"]:
+                direct_response += f"• {route}\n"
+            direct_response += "\nWould you like to book a ticket for one of these routes instead? "
+            direct_response += "Or you can check the Fresh Bus website/app for updates on other routes."
+            
+            # Save the direct response
+            session['messages'].append({"role": "assistant", "content": direct_response})
+            
+            # Try to save to Redis
+            try:
+                conversation_id = conversation_manager.save_conversation(session_id, session['messages'])
+                print(f"Saved invalid route response to Redis: {conversation_id}")
+            except Exception as redis_err:
+                print(f"Failed to save to Redis: {redis_err}")
+                conversation_id = None
+            
+            # Return the direct response instead of calling the AI model
+            yield json.dumps({"text": direct_response, "done": False})
+            yield json.dumps({
+                "text": "", 
+                "done": True, 
+                "session_id": session_id, 
+                "language_style": context.get('language', 'english'),
+                "conversation_id": conversation_id
+            })
+            return
+        
         # Only use direct response for real bus queries, not simple ones
         if is_bus_listing_request and api_data and api_data.get("trips") and not is_simple_query:
             # Use direct response generation for bus listings
             print("Using direct bus response generator to avoid hallucinations")
-            direct_response = self.generate_direct_bus_response(api_data, context)
+            
+            # Use await with the async functions
+            direct_response = await self.generate_direct_bus_response(api_data, context, return_json=False)
+            
+            # Get JSON response as well
+            json_response = await self.generate_direct_bus_response(api_data, context, return_json=True)
             
             # Save the direct response
             session['messages'].append({"role": "assistant", "content": direct_response})
@@ -3527,14 +4533,19 @@ class FreshBusAssistant:
                 print(f"Failed to save to Redis: {redis_err}")
                 conversation_id = None
             
-            # Return the direct response instead of calling Claude
-            yield json.dumps({"text": direct_response, "done": False})
+            # Add JSON data formatted as code block to the end of the response
+            json_formatted = "\n\n```json\n" + json.dumps(json_response, indent=2) + "\n```"
+            complete_response = direct_response + json_formatted
+            
+            # Return the direct response with JSON included
+            yield json.dumps({"text": complete_response, "done": False})
             yield json.dumps({
                 "text": "", 
                 "done": True, 
                 "session_id": session_id, 
                 "language_style": context.get('language', 'english'),
-                "conversation_id": conversation_id
+                "conversation_id": conversation_id,
+                "json_data": json_response  # Include JSON data separately
             })
             return
         
@@ -3805,7 +4816,7 @@ class FreshBusAssistant:
                 else:
                     # Stream text chunks
                     yield json.dumps({"text": chunk["text"], "done": False})
-                    
+                        
         except Exception as e:
             error_msg = f"Error with {self.ai_provider.provider_name} API: {str(e)}"
             print(error_msg)
@@ -3815,7 +4826,11 @@ class FreshBusAssistant:
             
             # Handle the case when we have bus data but the AI call failed
             if api_data and api_data.get("trips") and context.get('user_requested_source') and context.get('user_requested_destination'):
-                direct_response = self.generate_direct_bus_response(api_data, context)
+                # Use await with the async functions
+                direct_response = await self.generate_direct_bus_response(api_data, context, return_json=False)
+                # Get JSON response too
+                json_response = await self.generate_direct_bus_response(api_data, context, return_json=True)
+                
                 print("Using direct bus response generation due to AI API error")
                 session['messages'].append({"role": "assistant", "content": direct_response})
                 
@@ -3828,13 +4843,18 @@ class FreshBusAssistant:
                     print(f"Failed to save to Redis: {redis_err}")
                     conversation_id = None
                 
-                yield json.dumps({"text": direct_response, "done": False})
+                # Add JSON data formatted as code block to the end of the response
+                json_formatted = "\n\n```json\n" + json.dumps(json_response, indent=2) + "\n```"
+                complete_response = direct_response + json_formatted
+                
+                yield json.dumps({"text": complete_response, "done": False})
                 yield json.dumps({
                     "text": "", 
                     "done": True, 
                     "session_id": session_id,
                     "language_style": context.get('language', 'english'),
-                    "conversation_id": conversation_id
+                    "conversation_id": conversation_id,
+                    "json_data": json_response  # Include JSON data separately
                 })
                 return
             
@@ -4520,125 +5540,67 @@ async def initialize(request: InitializeRequest):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-@app.api_route("/query", methods=["GET", "POST"])
-async def query(request: Request, response: Response):
-    """Handle user query with optional auth token"""
+
+@app.api_route("/query", methods=["POST"])
+async def query(request: Request):
     try:
-        if request.method == "GET":
-            query_str = request.query_params.get("query")
-            session_id = request.query_params.get("session_id", "")
-            gender = request.query_params.get("gender")
-            provider = request.query_params.get("provider")
-            model = request.query_params.get("model")
-            
-            if not query_str:
-                raise HTTPException(status_code=400, detail="No query provided")
-                
-            query_request = QueryRequest(
-                query=query_str,
-                session_id=session_id,
-                gender=gender,
-                provider=provider,
-                model=model
+        body = await request.json()
+        query = body.get("query")
+        session_id = body.get("session_id")
+        provider = body.get("provider")
+        model = body.get("model")
+
+        if not query:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Query is required"}
             )
-        else:
+
+        response_generator = fresh_bus_assistant.generate_response(
+            query=query,
+            session_id=session_id,
+            provider=provider,
+            model=model
+        )
+
+        async def stream_response():
             try:
-                body = await request.json()
-                
-                # Check if this is a silent model switch request
-                is_silent = body.get('silent', False)
-                special_command = body.get('query') == "_model_switch_"
-                
-                if is_silent and special_command:
-                    # Handle silent model switch
-                    provider = body.get('provider')
-                    model = body.get('model')
-                    session_id = body.get('session_id')
+                async for chunk in response_generator:
+                    # Parse the chunk if it's a string
+                    if isinstance(chunk, str):
+                        try:
+                            chunk = json.loads(chunk)
+                        except json.JSONDecodeError:
+                            # If it's not valid JSON, wrap it
+                            chunk = {"text": chunk, "done": False}
                     
-                    if provider and model:
-                        # Create a new provider
-                        new_provider = AIProviderFactory.create_provider(
-                            provider_name=provider,
-                            model=model
-                        )
-                        
-                        # Initialize it
-                        await new_provider.initialize()
-                        
-                        # Cleanup old provider
-                        await fresh_bus_assistant.ai_provider.cleanup()
-                        
-                        # Set the new provider
-                        fresh_bus_assistant.ai_provider = new_provider
-                        
-                        # Store the session's current provider if needed
-                        if session_id:
-                            session, _ = fresh_bus_assistant.get_or_create_session(session_id)
-                            session['provider'] = provider
-                            session['model'] = model
-                        
-                        # Return empty success response
-                        return StreamingResponse(
-                            iter(["data: {\"success\": true}\n\n"]), 
-                            media_type="text/event-stream"
-                        )
-                
-                # Extract auth data if present
-                auth_data = None
-                if 'auth' in body:
-                    auth_data = body.pop('auth')
-                    print(f"Auth data received for user: {auth_data.get('user', {}).get('mobile')}")
-                
-                query_request = QueryRequest(**body)
-                
-                # Store auth data in session context if available
-                if auth_data and query_request.session_id:
-                    session, _ = fresh_bus_assistant.get_or_create_session(query_request.session_id)
-                    session['context']['auth'] = auth_data
-                    session['context']['user'] = auth_data.get('user', {})
-                    # Let the assistant know user is logged in
-                    if auth_data.get('user', {}).get('mobile'):
-                        print(f"User authenticated with mobile: {auth_data['user']['mobile']}")
+                    # Always ensure chunk is a dictionary with required fields
+                    if not isinstance(chunk, dict):
+                        chunk = {"text": str(chunk), "done": False}
+                    
+                    if "error" in chunk:
+                        yield f"data: {json.dumps({'error': chunk['error'], 'done': True})}\n\n"
+                        return
+                    
+                    yield f"data: {json.dumps(chunk)}\n\n"
             except Exception as e:
-                raise HTTPException(status_code=400, detail=f"Invalid request body: {str(e)}")
-        
-        detected_language = request.headers.get("X-Detected-Language")
-        if query_request.location:
-            print(f"Location received from client: {query_request.location}")
-        
-        async def stream_generator():
-            async for chunk in fresh_bus_assistant.generate_response(
-                query_request.query, 
-                query_request.session_id,
-                user_gender=query_request.gender,
-                user_location=query_request.location,
-                detected_language=detected_language,
-                provider=query_request.provider,
-                model=query_request.model
-            ):
-                yield f"data: {chunk}\n\n"
-                try:
-                    data = json.loads(chunk)
-                    if data.get("done") and data.get("session_id"):
-                        response.set_cookie(
-                            key="session_id", 
-                            value=data["session_id"],
-                            max_age=30 * 60,
-                            httponly=True,
-                            samesite="lax"
-                        )
-                except Exception as e:
-                    print(f"Error parsing response: {e}")
-        
+                error_msg = f"Error in stream_response: {str(e)}"
+                print(error_msg)
+                yield f"data: {json.dumps({'error': error_msg, 'done': True})}\n\n"
+
         return StreamingResponse(
-            stream_generator(), 
-            media_type="text/event-stream"
+            stream_response(),
+            media_type="text/event-stream",
+            headers={
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'X-Accel-Buffering': 'no'
+            }
         )
     except Exception as e:
-        print(f"Error in query endpoint: {e}")
         return JSONResponse(
             status_code=500,
-            content={"status": "error", "message": str(e)}
+            content={"error": str(e)}
         )
 
 @app.get("/clear-session")

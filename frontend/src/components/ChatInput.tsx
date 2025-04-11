@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, Mic, Square } from 'lucide-react';
 
 interface ChatInputProps {
-  onSend: (message: string) => void;
+  onSend: (message: string, sender?: string) => void;
 }
 
 const ChatInput: React.FC<ChatInputProps> = ({ onSend }) => {
@@ -21,10 +21,10 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSend }) => {
     }
   }, [message]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (message.trim()) {
-      onSend(message.trim());
-      setMessage('');
+        onSend(message.trim());
+        setMessage('');
     }
   };
 

@@ -5,7 +5,7 @@ import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { Sidebar } from './components/Sidebar';
 import { ChatMessage } from './components/ChatMessage';
 import ChatInput from './components/ChatInput';
-import { Chat, Message, BusRoute } from './types';
+import { Chat, Message} from './types';
 import { Logo } from './components/Logo';
 import LoginModal from './components/LoginModal';
 import { LoginModalProvider, useLoginModal } from './context/loginModalContext';
@@ -14,6 +14,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import 'react-toastify/dist/ReactToastify.css';
 import { Toaster } from 'react-hot-toast';
 import { authService } from './services/api'; // Import authService for logout functionality
+import ErrorBoundary from './components/ErrorBoundary';
 
 const mockChats: Chat[] = [
     {
@@ -46,7 +47,7 @@ function Layout() {
         setIsSidebarOpen(prev => !prev);
     }, []);
 
-    const handleSendMessage = useCallback((content: string) => {
+    const handleSendMessage = useCallback(async (content: string) => {
         const newMessage: Message = {
             id: Date.now().toString(),
             content,
@@ -62,87 +63,97 @@ function Layout() {
             )
         );
 
-        if (
-            (content.toLowerCase().includes('hyderabad') || content.toLowerCase().includes('hyd')) &&
-            (content.toLowerCase().includes('vijayawada') || content.toLowerCase().includes('vij'))
-        ) {
-            setTimeout(() => {
-                const sampleBusRoutes: BusRoute[] = [
-                    {
-                        id: 'bus-1',
-                        from: 'Hyderabad',
-                        to: 'Vijayawada',
-                        rating: 4.5,
-                        duration: '8 hrs',
-                        startTime: '06:00',
-                        endTime: '14:00',
-                        boardingPoints: ['Begumpet', 'Madhapur'],
-                        droppingPoints: ['Vijayawada Bus Stand', 'Guntur'],
-                        seats: [
-                            { id: 'R1', type: 'Regular', price: 500, available: true, label: 'R1' },
-                            { id: 'R2', type: 'Regular', price: 500, available: true, label: 'R2' },
-                            { id: 'B1', type: 'Budget-Friendly', price: 480, available: true, label: 'B1' },
-                            { id: 'B2', type: 'Budget-Friendly', price: 480, available: true, label: 'B2' },
-                            { id: 'P1', type: 'Premium', price: 800, available: true, label: 'P1' },
-                            { id: 'P2', type: 'Premium', price: 800, available: true, label: 'P2' },
-                        ],
-                    },
-                    {
-                        id: 'bus-2',
-                        from: 'Hyderabad',
-                        to: 'Vijayawada',
-                        rating: 4.2,
-                        duration: '7.5 hrs',
-                        startTime: '07:00',
-                        endTime: '14:30',
-                        boardingPoints: ['Secunderabad', 'Begumpet'],
-                        droppingPoints: ['Vijayawada Bus Stand', 'Guntur'],
-                        seats: [
-                            { id: 'R1', type: 'Regular', price: 480, available: true, label: 'R1' },
-                            { id: 'R2', type: 'Regular', price: 480, available: true, label: 'R2' },
-                            { id: 'B1', type: 'Budget-Friendly', price: 450, available: true, label: 'B1' },
-                            { id: 'B2', type: 'Budget-Friendly', price: 450, available: true, label: 'B2' },
-                            { id: 'P1', type: 'Premium', price: 850, available: true, label: 'P1' },
-                            { id: 'P2', type: 'Premium', price: 850, available: true, label: 'P2' },
-                        ],
-                    },
-                    {
-                        id: 'bus-3',
-                        from: 'Hyderabad',
-                        to: 'Vijayawada',
-                        rating: 4.7,
-                        duration: '8.5 hrs',
-                        startTime: '05:30',
-                        endTime: '14:00',
-                        boardingPoints: ['Abids', 'Koti'],
-                        droppingPoints: ['Vijayawada Bus Stand', 'Moghal'],
-                        seats: [
-                            { id: 'R1', type: 'Regular', price: 510, available: true, label: 'R1' },
-                            { id: 'R2', type: 'Regular', price: 510, available: true, label: 'R2' },
-                            { id: 'B1', type: 'Budget-Friendly', price: 470, available: true, label: 'B1' },
-                            { id: 'B2', type: 'Budget-Friendly', price: 470, available: true, label: 'B2' },
-                            { id: 'P1', type: 'Premium', price: 900, available: true, label: 'P1' },
-                            { id: 'P2', type: 'Premium', price: 900, available: true, label: 'P2' },
-                        ],
-                    },
-                ];
+        try {
+            const response = await fetch('http://localhost:8000/query', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'text/event-stream'
+                },
+                body: JSON.stringify({
+                    query: content,
+                    session_id: localStorage.getItem('sessionId') || null,
+                }),
+            });
 
-                const busMessage: Message = {
-                    id: Date.now().toString() + '-bus',
-                    content: '',
-                    role: 'assistant',
-                    timestamp: new Date(),
-                    busRoutes: sampleBusRoutes,
-                };
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
 
-                setChats(prevChats =>
-                    prevChats.map(chat =>
-                        chat.id === selectedChatId
-                            ? { ...chat, messages: [...chat.messages, busMessage], lastUpdated: new Date() }
-                            : chat
-                    )
-                );
-            }, 1000);
+            const reader = response.body?.getReader();
+            const decoder = new TextDecoder();
+
+            if (!reader) {
+                throw new Error('No response body reader available');
+            }
+
+            let assistantMessageId = Date.now().toString();
+            let assistantMessage = '';
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            if (data.error) {
+                                throw new Error(data.error);
+                            }
+                            
+                            if (data.text) {
+                                assistantMessage += data.text;
+                                setChats(prevChats =>
+                                    prevChats.map(chat =>
+                                        chat.id === selectedChatId
+                                            ? {
+                                                ...chat,
+                                                messages: [
+                                                    ...chat.messages.filter(m => m.id !== assistantMessageId),
+                                                    {
+                                                        id: assistantMessageId,
+                                                        role: 'assistant',
+                                                        content: assistantMessage,
+                                                        timestamp: new Date(),
+                                                    },
+                                                ],
+                                                lastUpdated: new Date(),
+                                            }
+                                            : chat
+                                    )
+                                );
+                            }
+                        } catch (e) {
+                            console.error('Error parsing SSE data:', e);
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error sending query:', error);
+            setChats(prevChats =>
+                prevChats.map(chat =>
+                    chat.id === selectedChatId
+                        ? {
+                            ...chat,
+                            messages: [
+                                ...chat.messages,
+                                {
+                                    id: Date.now().toString(),
+                                    content: 'Sorry, something went wrong. Please try again.',
+                                    role: 'assistant',
+                                    timestamp: new Date(),
+                                },
+                            ],
+                            lastUpdated: new Date(),
+                        }
+                        : chat
+                )
+            );
         }
     }, [selectedChatId]);
 
@@ -317,25 +328,27 @@ function Layout() {
         onChatSelect={setSelectedChatId}
         onNewChat={handleNewChat}
       />
-      <div className={`${chatAreaClass} flex flex-col h-full`}>
-        <div className="flex-1 overflow-hidden">
-          <div className="h-full overflow-y-auto hide-scrollbar"> {/* Ensure scrollability */}
-            <div className="max-w-3xl mx-auto px-2">
-              <div className="py-1.5 space-y-1">
-                {selectedChat?.messages.map((message) => (
-                  <ChatMessage key={message.id} message={message} />
-                ))}
-                <div ref={messagesEndRef} />
+      <ErrorBoundary>
+        <div className={`${chatAreaClass} flex flex-col h-full`}>
+          <div className="flex-1 overflow-hidden">
+            <div className="h-full overflow-y-auto hide-scrollbar"> {/* Ensure scrollability */}
+              <div className="max-w-3xl mx-auto px-2">
+                <div className="py-1.5 space-y-1">
+                  {selectedChat?.messages.map((message) => (
+                    <ChatMessage key={message.id} message={message} />
+                  ))}
+                  <div ref={messagesEndRef} />
+                </div>
               </div>
             </div>
           </div>
-        </div>
-        <div className="flex-shrink-0 bg-[var(--color-app-bg)]">
-          <div className="max-w-3xl mx-auto px-2 py-1.5">
-            <ChatInput onSend={handleSendMessage} />
+          <div className="flex-shrink-0 bg-[var(--color-app-bg)]">
+            <div className="max-w-3xl mx-auto px-2 py-1.5">
+              <ChatInput onSend={handleSendMessage} />
+            </div>
           </div>
         </div>
-      </div>
+      </ErrorBoundary>
     </div>
   </div>
 </div>
