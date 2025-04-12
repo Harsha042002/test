@@ -499,40 +499,48 @@ class GeminiProvider(AIProvider):
         prompt: str, 
         system_message: str, 
         messages: List[Dict[str, str]],
-        max_tokens: int = 1000,
+        max_tokens: int = 2000,
         temperature: float = 0.7
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Generate a streaming response from Gemini"""
+        """Generate streaming response from Gemini with conversation history."""
+        
         if not self.initialized:
             await self.initialize()
-        
-        try:
-            # Convert messages to Gemini format
-            gemini_content = []
             
-            # Add system message
+        try:
+            # Format messages for Gemini
+            gemini_messages = []
+            
+            # Add system message first
             if system_message:
-                gemini_content.append({
+                gemini_messages.append({
                     "role": "user",
-                    "parts": [{"text": system_message}]
+                    "parts": [{"text": f"System: {system_message}"}]
                 })
-                gemini_content.append({
+                gemini_messages.append({
                     "role": "model",
-                    "parts": [{"text": "I understand."}]
+                    "parts": [{"text": "I understand and will act according to these instructions."}]
                 })
             
             # Add conversation history
             for msg in messages:
                 role = "user" if msg["role"] == "user" else "model"
-                gemini_content.append({
+                gemini_messages.append({
                     "role": role,
                     "parts": [{"text": msg["content"]}]
                 })
-
-            # Create chat
-            chat = self.client.start_chat(history=gemini_content)
             
-            # Get streaming response
+            # Add current prompt if not already included
+            if not messages or messages[-1]["content"] != prompt:
+                gemini_messages.append({
+                    "role": "user",
+                    "parts": [{"text": prompt}]
+                })
+
+            # Create chat with history
+            chat = self.client.start_chat(history=gemini_messages)
+            
+            # Generate streaming response
             response = chat.send_message(
                 prompt,
                 stream=True,
@@ -556,20 +564,30 @@ class GeminiProvider(AIProvider):
                 if text:
                     complete_response += text
                     yield {"text": text, "done": False}
-                    await asyncio.sleep(0)  # Give other tasks a chance to run
+                    await asyncio.sleep(0)  # Yield control
             
-            # Send final chunk with complete response
-            yield {"text": "", "done": True, "complete_response": complete_response}
+            # Final chunk with complete response
+            yield {
+                "text": "",
+                "done": True,
+                "complete_response": complete_response,
+                "role": "assistant"
+            }
             
         except Exception as e:
-            print(f"Error generating Gemini response: {str(e)}")
-            yield {"error": str(e), "done": True}
+            error_msg = f"Error generating Gemini response: {str(e)}"
+            print(error_msg)
+            yield {"error": error_msg, "done": True}
 
     async def _async_iterator(self, sync_iterator):
-        """Helper method to convert synchronous iterator to async"""
-        for item in sync_iterator:
-            yield item
-            await asyncio.sleep(0)  # Allow other tasks to run
+        """Convert sync iterator to async"""
+        try:
+            for item in sync_iterator:
+                yield item
+                await asyncio.sleep(0)
+        except Exception as e:
+            print(f"Error in async iterator: {str(e)}")
+            yield {"error": str(e)}
     
     async def count_tokens(self, text: str) -> int:
         """Approximate token count for Gemini"""

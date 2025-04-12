@@ -1010,6 +1010,289 @@
         .model-dropdown:hover {
             border-color: var(--primary-color);
         }
+
+        /* Booking Modal Styles */
+        .booking-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        
+        .booking-modal {
+            background-color: white;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 600px;
+            height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            padding: 30px;
+            position: relative;
+        }
+        
+        .booking-modal-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: none;
+            border: none;
+            font-size: 1.2rem;
+            color: var(--secondary-color);
+            cursor: pointer;
+        }
+        
+        .booking-modal-title {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            color: var(--primary-color);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 15px;
+        }
+        
+        .booking-section {
+            margin-bottom: 25px;
+        }
+        
+        .booking-section-title {
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            color: var(--dark-color);
+        }
+        
+        .booking-bus-details {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .booking-detail-row {
+            display: flex;
+            margin-bottom: 10px;
+        }
+        
+        .booking-detail-label {
+            font-weight: 600;
+            width: 140px;
+            color: var(--secondary-color);
+        }
+        
+        .booking-detail-value {
+            flex: 1;
+        }
+        
+        .booking-point-selector {
+            margin-bottom: 15px;
+        }
+        
+        .point-selector-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        .point-select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            margin-bottom: 5px;
+        }
+        
+        .point-select:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+        
+        .point-address {
+            font-size: 0.85rem;
+            color: var(--secondary-color);
+        }
+        
+        .passenger-form {
+            margin-bottom: 20px;
+        }
+        
+        .passenger-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .passenger-field {
+            flex: 1;
+            min-width: 200px;
+        }
+        
+        .passenger-label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        
+        .passenger-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+        }
+        
+        .passenger-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+        
+        .gender-select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+        }
+        
+        .gender-select:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+        
+        .booking-summary {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .summary-title {
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: var(--dark-color);
+        }
+        
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        
+        .summary-label {
+            color: var(--secondary-color);
+        }
+        
+        .summary-value {
+            font-weight: 600;
+        }
+        
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid var(--border-color);
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        
+        .booking-button {
+            background-color: var(--success-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 15px 25px;
+            width: 100%;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 1.1rem;
+            transition: background-color 0.3s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .booking-button:hover {
+            background-color: #146c43;
+        }
+        
+        .booking-button:disabled {
+            background-color: var(--secondary-color);
+            cursor: not-allowed;
+        }
+        
+        /* Payment Success Modal */
+        .payment-success-modal {
+            text-align: center;
+            padding: 30px;
+        }
+        
+        .success-icon {
+            font-size: 3rem;
+            color: var(--success-color);
+            margin-bottom: 20px;
+        }
+        
+        .success-title {
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+            color: var(--success-color);
+        }
+        
+        .success-message {
+            font-size: 1.1rem;
+            margin-bottom: 25px;
+            color: var(--dark-color);
+        }
+        
+        .payment-details {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 25px;
+            text-align: left;
+        }
+        
+        .booking-id {
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        .view-ticket-button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 25px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background-color 0.3s;
+            margin-right: 10px;
+        }
+        
+        .view-ticket-button:hover {
+            background-color: #0046ad;
+        }
+        
+        .done-button {
+            background-color: var(--success-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 25px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background-color 0.3s;
+        }
+        
+        .done-button:hover {
+            background-color: #146c43;
+        }
     </style>
 </head>
 <body>
@@ -1136,6 +1419,158 @@
         </div>
     </div>
     
+    <!-- Booking Modal -->
+    <div class="booking-modal-overlay" id="bookingModal" style="display: none;">
+        <div class="booking-modal">
+            <button class="booking-modal-close" id="closeBookingModal">&times;</button>
+            
+            <h2 class="booking-modal-title">Book Your Bus Ticket</h2>
+            
+            <div class="booking-section">
+                <h3 class="booking-section-title">Bus Details</h3>
+                <div class="booking-bus-details">
+                    <div class="booking-detail-row">
+                        <div class="booking-detail-label">From - To:</div>
+                        <div class="booking-detail-value" id="bookingRoute">Hyderabad to Guntur</div>
+                    </div>
+                    <div class="booking-detail-row">
+                        <div class="booking-detail-label">Date & Time:</div>
+                        <div class="booking-detail-value" id="bookingDateTime">Apr 12, 2025 • 5:35 AM - 5:20 PM</div>
+                    </div>
+                    <div class="booking-detail-row">
+                        <div class="booking-detail-label">Bus Type:</div>
+                        <div class="booking-detail-value" id="bookingBusType">Olectra Electric AC Seater (2+2)</div>
+                    </div>
+                    <div class="booking-detail-row">
+                        <div class="booking-detail-label">Seat Number:</div>
+                        <div class="booking-detail-value" id="bookingSeatNumber">Seat #5</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="booking-section">
+                <h3 class="booking-section-title">Boarding & Dropping Points</h3>
+                
+                <div class="booking-point-selector">
+                    <div class="point-selector-title">Boarding Point</div>
+                    <select id="boardingPointSelect" class="point-select">
+                        <!-- Boarding points will be populated here -->
+                    </select>
+                    <div class="point-address" id="boardingPointAddress"></div>
+                </div>
+                
+                <div class="booking-point-selector">
+                    <div class="point-selector-title">Dropping Point</div>
+                    <select id="droppingPointSelect" class="point-select">
+                        <!-- Dropping points will be populated here -->
+                    </select>
+                    <div class="point-address" id="droppingPointAddress"></div>
+                </div>
+            </div>
+            
+            <div class="booking-section">
+                <h3 class="booking-section-title">Passenger Details</h3>
+                
+                <div class="passenger-form">
+                    <div class="passenger-row">
+                        <div class="passenger-field">
+                            <label class="passenger-label" for="passengerName">Passenger Name</label>
+                            <input type="text" id="passengerName" class="passenger-input" placeholder="Enter full name" required>
+                        </div>
+                        
+                        <div class="passenger-field">
+                            <label class="passenger-label" for="passengerAge">Age</label>
+                            <input type="number" id="passengerAge" class="passenger-input" placeholder="Enter age" min="1" max="100" required>
+                        </div>
+                        
+                        <div class="passenger-field">
+                            <label class="passenger-label" for="passengerGender">Gender</label>
+                            <select id="passengerGender" class="gender-select" required>
+                                <option value="">Select Gender</option>
+                                <option value="Male">Male</option>
+                                <option value="Female">Female</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="passenger-row">
+                        <div class="passenger-field">
+                            <label class="passenger-label" for="passengerMobile">Mobile Number</label>
+                            <input type="tel" id="passengerMobile" class="passenger-input" placeholder="10-digit mobile number" pattern="[0-9]{10}" required>
+                        </div>
+                        
+                        <div class="passenger-field">
+                            <label class="passenger-label" for="passengerEmail">Email</label>
+                            <input type="email" id="passengerEmail" class="passenger-input" placeholder="Enter email address" required>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="booking-summary">
+                <div class="summary-title">Booking Summary</div>
+                
+                <div class="summary-row">
+                    <div class="summary-label">Base Fare</div>
+                    <div class="summary-value" id="baseFare">₹499</div>
+                </div>
+                
+                <div class="summary-row">
+                    <div class="summary-label">GST</div>
+                    <div class="summary-value" id="gstAmount">₹59.88</div>
+                </div>
+                
+                <div class="summary-row">
+                    <div class="summary-label">Discount</div>
+                    <div class="summary-value" id="discountAmount">-₹101</div>
+                </div>
+                
+                <div class="total-row">
+                    <div>Total Amount</div>
+                    <div id="totalAmount">₹457.88</div>
+                </div>
+            </div>
+            
+            <button id="confirmBookingButton" class="booking-button">
+                <i class="fas fa-ticket-alt"></i> Confirm Booking
+            </button>
+        </div>
+    </div>
+    
+    <!-- Payment Success Modal -->
+    <div class="booking-modal-overlay" id="paymentSuccessModal" style="display: none;">
+        <div class="booking-modal payment-success-modal">
+            <div class="success-icon">
+                <i class="fas fa-check-circle"></i>
+            </div>
+            
+            <h2 class="success-title">Booking Successful!</h2>
+            <p class="success-message">Your bus ticket has been booked successfully.</p>
+            
+            <div class="payment-details">
+                <div class="booking-id" id="bookingOrderId">Booking ID: 69L4LA0itce3fngdyT</div>
+                <div class="booking-detail-row">
+                    <div class="booking-detail-label">Route:</div>
+                    <div class="booking-detail-value" id="successRoute">Hyderabad to Guntur</div>
+                </div>
+                <div class="booking-detail-row">
+                    <div class="booking-detail-label">Date & Time:</div>
+                    <div class="booking-detail-value" id="successDateTime">Apr 12, 2025 • 5:35 AM</div>
+                </div>
+                <div class="booking-detail-row">
+                    <div class="booking-detail-label">Seat:</div>
+                    <div class="booking-detail-value" id="successSeat">Seat #5</div>
+                </div>
+                <div class="booking-detail-row">
+                    <div class="booking-detail-label">Payment ID:</div>
+                    <div class="booking-detail-value" id="successPaymentId">ordeh_51f42cf939fa4f5fbbbc06731577a20d</div>
+                </div>
+            </div>
+            
+            <button id="doneButton" class="done-button">Done</button>
+        </div>
+    </div>
+    
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
     
@@ -1173,6 +1608,37 @@
             const otpTimer = document.getElementById('otpTimer');
             const otpInputs = document.querySelectorAll('.otp-input');
             
+            // Booking Modal Elements
+            const bookingModal = document.getElementById('bookingModal');
+            const closeBookingModal = document.getElementById('closeBookingModal');
+            const boardingPointSelect = document.getElementById('boardingPointSelect');
+            const droppingPointSelect = document.getElementById('droppingPointSelect');
+            const boardingPointAddress = document.getElementById('boardingPointAddress');
+            const droppingPointAddress = document.getElementById('droppingPointAddress');
+            const bookingRoute = document.getElementById('bookingRoute');
+            const bookingDateTime = document.getElementById('bookingDateTime');
+            const bookingBusType = document.getElementById('bookingBusType');
+            const bookingSeatNumber = document.getElementById('bookingSeatNumber');
+            const passengerName = document.getElementById('passengerName');
+            const passengerAge = document.getElementById('passengerAge');
+            const passengerGender = document.getElementById('passengerGender');
+            const passengerMobile = document.getElementById('passengerMobile');
+            const passengerEmail = document.getElementById('passengerEmail');
+            const baseFare = document.getElementById('baseFare');
+            const gstAmount = document.getElementById('gstAmount');
+            const discountAmount = document.getElementById('discountAmount');
+            const totalAmount = document.getElementById('totalAmount');
+            const confirmBookingButton = document.getElementById('confirmBookingButton');
+            
+            // Payment Success Modal Elements
+            const paymentSuccessModal = document.getElementById('paymentSuccessModal');
+            const bookingOrderId = document.getElementById('bookingOrderId');
+            const successRoute = document.getElementById('successRoute');
+            const successDateTime = document.getElementById('successDateTime');
+            const successSeat = document.getElementById('successSeat');
+            const successPaymentId = document.getElementById('successPaymentId');
+            const doneButton = document.getElementById('doneButton');
+            
             // Global variables
             let userLocation = null;
             let sessionId = localStorage.getItem('sessionId') || null;
@@ -1195,6 +1661,13 @@
             let userDetails = JSON.parse(localStorage.getItem('userDetails') || '{}');
             let currentMobile = '';
             let deviceId = localStorage.getItem('deviceId') || `device_${Math.random().toString(36).substring(2, 10)}`;
+            
+            // Booking variables
+            let currentBusData = null;
+            let selectedBoardingPoint = null;
+            let selectedDroppingPoint = null;
+            let selectedSeatId = null;
+            let fareDetails = null;
             
             // Save deviceId if not already saved
             if (!localStorage.getItem('deviceId')) {
@@ -1423,6 +1896,16 @@
                     `;
                     loginButton.title = "Logged in as " + (userDetails.name || userDetails.mobile);
                     loginButton.classList.add('logged-in');
+                    
+                    // Pre-fill passenger details from user profile
+                    if (userDetails.name) passengerName.value = userDetails.name;
+                    if (userDetails.mobile) passengerMobile.value = userDetails.mobile;
+                    if (userDetails.email) passengerEmail.value = userDetails.email;
+                    if (userDetails.gender) {
+                        passengerGender.value = userDetails.gender;
+                    } else if (selectedGender) {
+                        passengerGender.value = selectedGender === 'male' ? 'Male' : 'Female';
+                    }
                 } else {
                     // User is not logged in
                     loginButton.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login';
@@ -1848,8 +2331,12 @@
                 const premiumMatch = busText.match(premiumRegex);
                 const budgetMatch = busText.match(budgetRegex);
                 
+                // Extract trip ID if it's in the text
+                const tripIdMatch = busText.match(/Trip ID:\s*([^\s\)]+)/);
+                const tripId = tripIdMatch ? tripIdMatch[1] : null;
+                
                 // Build HTML
-                let html = `<div class="bus-card" data-bus-index="${index}">`;
+                let html = `<div class="bus-card" data-bus-index="${index}" data-trip-id="${tripId || ''}">`;
                 
                 // Verification badge
                 html += `<div class="verification-badge"><i class="fas fa-check-circle"></i> Verified</div>`;
@@ -1982,7 +2469,7 @@
                 
                 // Book button
                 html += `
-                    <button class="book-button" onclick="bookBus(${index})">
+                    <button class="book-button" onclick="bookBus(${index}, '${tripId || ''}')">
                         <i class="fas fa-ticket-alt"></i> Book This Bus
                     </button>
                 `;
@@ -1993,10 +2480,29 @@
             }
             
             // Initialize global booking function
-            window.bookBus = function(busIndex) {
-                const message = `I'd like to book bus number ${busIndex}`;
-                messageInput.value = message;
-                sendMessage();
+            window.bookBus = function(busIndex, tripId) {
+                if (!authToken) {
+                    showToast('Please login to book tickets', 'warning');
+                    showLoginModal();
+                    return;
+                }
+                
+                // Check if we have the tripId
+                if (!tripId) {
+                    // Try to extract from the bus card data attribute
+                    const busCard = document.querySelector(`.bus-card[data-bus-index="${busIndex}"]`);
+                    if (busCard) {
+                        tripId = busCard.getAttribute('data-trip-id');
+                    }
+                    
+                    if (!tripId) {
+                        showToast('Unable to find bus information. Please try again.', 'error');
+                        return;
+                    }
+                }
+                
+                // Now we can initiate booking with the trip ID
+                initiateBusBooking(tripId);
             };
             
             // Initialize global refresh tracking function
@@ -2005,6 +2511,257 @@
                 messageInput.value = message;
                 sendMessage();
             };
+            
+            // Initiate bus booking process
+            async function initiateBusBooking(tripId) {
+                try {
+                    showLoading();
+                    
+                    // Extract details from JSON data or fetch from server
+                    console.log(`Initiating booking for Trip ID: ${tripId}`);
+                    
+                    // Fetch bus details using the Trip ID
+                    const source_id = '3'; // Hyderabad (default)
+                    const destination_id = '13'; // Guntur (default)
+                    
+                    // Fetch seat data
+                    const seatResponse = await fetch(`/trips/${tripId}/seats?source_id=${source_id}&destination_id=${destination_id}`);
+                    if (!seatResponse.ok) {
+                        throw new Error('Failed to fetch seat data');
+                    }
+                    const seatData = await seatResponse.json();
+                    
+                    // Fetch boarding points
+                    const boardingResponse = await fetch(`/trips/${tripId}/boarding-points/${source_id}`);
+                    if (!boardingResponse.ok) {
+                        throw new Error('Failed to fetch boarding points');
+                    }
+                    const boardingPoints = await boardingResponse.json();
+                    
+                    // Fetch dropping points
+                    const droppingResponse = await fetch(`/trips/${tripId}/dropping-points`);
+                    if (!droppingResponse.ok) {
+                        throw new Error('Failed to fetch dropping points');
+                    }
+                    const droppingPoints = await droppingResponse.json();
+                    
+                    hideLoading();
+                    
+                    // Select a seat to book (first available seat)
+                    const availableSeats = seatData.seats.filter(seat => 
+                        !seat.isOccupied && seat.availabilityStatus === 'A'
+                    );
+                    
+                    if (availableSeats.length === 0) {
+                        showToast('No available seats found', 'error');
+                        return;
+                    }
+                    
+                    // Choose first available seat
+                    const selectedSeat = availableSeats[0];
+                    selectedSeatId = selectedSeat.id;
+                    
+                    // Get fare details
+                    fareDetails = selectedSeat.fare || {};
+                    const totalFare = selectedSeat.totalFare || (fareDetails["Base Fare"] || 0);
+                    
+                    // Store data for booking
+                    currentBusData = {
+                        tripId: parseInt(tripId),
+                        vehicleType: seatData.vehicleType,
+                        seat: selectedSeat,
+                        boardingPoints: boardingPoints,
+                        droppingPoints: droppingPoints,
+                        totalFare: totalFare,
+                        fareDetails: fareDetails
+                    };
+                    
+                    // Populate booking modal
+                    populateBookingModal();
+                    
+                    // Show booking modal
+                    bookingModal.style.display = 'flex';
+                    
+                } catch (error) {
+                    hideLoading();
+                    console.error('Error initiating booking:', error);
+                    showToast('Failed to initiate booking. Please try again.', 'error');
+                }
+            }
+            
+            // Populate the booking modal with bus details
+            function populateBookingModal() {
+                if (!currentBusData) {
+                    showToast('Booking data not available', 'error');
+                    return;
+                }
+                
+                // Set bus details
+                bookingRoute.textContent = 'Hyderabad to Guntur'; // Default or from API
+                bookingDateTime.textContent = 'Apr 12, 2025 • 5:35 AM'; // Format from API data
+                bookingBusType.textContent = currentBusData.vehicleType.name || 'AC Seater';
+                bookingSeatNumber.textContent = `Seat #${currentBusData.seat.seatName}`;
+                
+                // Populate fare details
+                const fare = currentBusData.fareDetails;
+                baseFare.textContent = `₹${fare["Base Fare"] || 0}`;
+                gstAmount.textContent = `₹${fare["GST"] || 0}`;
+                discountAmount.textContent = `₹${fare["Discount"] || 0}`;
+                totalAmount.textContent = `₹${currentBusData.totalFare}`;
+                
+                // Populate boarding points dropdown
+                boardingPointSelect.innerHTML = '';
+                if (currentBusData.boardingPoints && currentBusData.boardingPoints.length > 0) {
+                    currentBusData.boardingPoints.forEach(point => {
+                        const bp = point.boardingPoint || {};
+                        const option = document.createElement('option');
+                        option.value = bp.id || 100; // Default to 100 if no ID
+                        option.textContent = bp.name || 'Unknown';
+                        option.setAttribute('data-address', bp.landmark || '');
+                        option.setAttribute('data-time', point.currentTime || '');
+                        boardingPointSelect.appendChild(option);
+                    });
+                    
+                    // Set default selected boarding point
+                    selectedBoardingPoint = parseInt(boardingPointSelect.value);
+                    boardingPointAddress.textContent = boardingPointSelect.options[boardingPointSelect.selectedIndex].getAttribute('data-address') || '';
+                }
+                
+                // Populate dropping points dropdown
+                droppingPointSelect.innerHTML = '';
+                if (currentBusData.droppingPoints && currentBusData.droppingPoints.length > 0) {
+                    currentBusData.droppingPoints.forEach(point => {
+                        const dp = point.droppingPoint || {};
+                        const option = document.createElement('option');
+                        option.value = dp.id || 120; // Default to 120 if no ID
+                        option.textContent = dp.name || 'Unknown';
+                        option.setAttribute('data-address', dp.landmark || '');
+                        option.setAttribute('data-time', point.currentTime || '');
+                        droppingPointSelect.appendChild(option);
+                    });
+                    
+                    // Set default selected dropping point
+                    selectedDroppingPoint = parseInt(droppingPointSelect.value);
+                    droppingPointAddress.textContent = droppingPointSelect.options[droppingPointSelect.selectedIndex].getAttribute('data-address') || '';
+                }
+                
+                // Pre-fill passenger details if logged in
+                if (userDetails.name) passengerName.value = userDetails.name;
+                if (userDetails.mobile) passengerMobile.value = userDetails.mobile;
+                if (userDetails.email) passengerEmail.value = userDetails.email;
+                
+                // Set gender based on selected option or default to user's preference
+                if (userDetails.gender) {
+                    passengerGender.value = userDetails.gender;
+                } else if (selectedGender) {
+                    passengerGender.value = selectedGender === 'male' ? 'Male' : 'Female';
+                }
+                
+                // Default age if not filled
+                if (!passengerAge.value) passengerAge.value = "25";
+            }
+            
+            // Complete the booking process
+            async function completeBooking() {
+                if (!currentBusData || !authToken) {
+                    showToast('Booking information or authentication missing', 'error');
+                    return;
+                }
+                
+                try {
+                    // Validate form fields
+                    if (!passengerName.value || !passengerAge.value || !passengerGender.value || 
+                        !passengerMobile.value || !passengerEmail.value) {
+                        showToast('Please fill in all passenger details', 'warning');
+                        return;
+                    }
+                    
+                    // Disable button to prevent double submission
+                    confirmBookingButton.disabled = true;
+                    confirmBookingButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+                    
+                    // Get boarding and dropping points
+                    const boardingPointId = parseInt(boardingPointSelect.value);
+                    const droppingPointId = parseInt(droppingPointSelect.value);
+                    
+                    // Create booking payload
+                    const bookingPayload = {
+                        mobile: passengerMobile.value,
+                        email: passengerEmail.value,
+                        seat_map: [
+                            {
+                                passenger_age: parseInt(passengerAge.value),
+                                seat_id: selectedSeatId,
+                                passenger_name: passengerName.value,
+                                gender: passengerGender.value
+                            }
+                        ],
+                        trip_id: currentBusData.tripId,
+                        boarding_point_id: boardingPointId,
+                        dropping_point_id: droppingPointId,
+                        boarding_point_time: "2025-04-11T23:20:00.000Z", // Default or from API
+                        dropping_point_time: "2025-04-12T07:30:00.000Z", // Default or from API
+                        total_collect_amount: currentBusData.totalFare,
+                        main_category: 1,
+                        freshcardId: 1,
+                        freshcard: false,
+                        return_url: "https://freshbus.com/booking-confirmation"
+                    };
+                    
+                    console.log("Booking payload:", bookingPayload);
+                    
+                    // Make booking API request
+                    const response = await fetch('/book-ticket', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${authToken}`
+                        },
+                        body: JSON.stringify(bookingPayload)
+                    });
+                    
+                    const data = await response.json();
+                    console.log("Booking response:", data);
+                    
+                    if (!response.ok) {
+                        throw new Error(data.message || 'Booking failed');
+                    }
+                    
+                    // Success! Hide booking modal and show payment success
+                    showPaymentSuccess(data.booking_details);
+                    
+                } catch (error) {
+                    console.error("Booking error:", error);
+                    showToast(error.message || 'Failed to complete booking', 'error');
+                    
+                    // Re-enable button
+                    confirmBookingButton.disabled = false;
+                    confirmBookingButton.innerHTML = '<i class="fas fa-ticket-alt"></i> Confirm Booking';
+                }
+            }
+            
+            // Show payment success modal
+            function showPaymentSuccess(data) {
+                // Hide booking modal
+                bookingModal.style.display = 'none';
+                
+                // Populate success modal details
+                bookingOrderId.textContent = `Booking ID: ${data.order_id || 'Unknown'}`;
+                successRoute.textContent = bookingRoute.textContent;
+                successDateTime.textContent = bookingDateTime.textContent;
+                successSeat.textContent = bookingSeatNumber.textContent;
+                successPaymentId.textContent = data.id || 'Unknown';
+                
+                // Show success modal
+                paymentSuccessModal.style.display = 'flex';
+                
+                // Reset booking form
+                confirmBookingButton.disabled = false;
+                confirmBookingButton.innerHTML = '<i class="fas fa-ticket-alt"></i> Confirm Booking';
+                
+                // Add success message to chat
+                addMessage(`Your ticket has been booked successfully! Booking ID: ${data.order_id || 'Unknown'}. You can view your ticket in the Fresh Bus app.`, false);
+            }
             
             // Fetch ETA data for a specific trip ID
             async function fetchEtaData(tripId) {
@@ -2355,6 +3112,12 @@
                                         if (jsonData.session_id) {
                                             sessionId = jsonData.session_id;
                                             localStorage.setItem('sessionId', sessionId);
+                                        }
+                                        
+                                        // If there's JSON trip data, process it
+                                        if (jsonData.json_data && jsonData.json_data.trips) {
+                                            // Store this data for potential booking
+                                            window.lastTripData = jsonData.json_data;
                                         }
                                     } else if (jsonData.replace) {
                                         // Replace the entire response with the corrected version
@@ -2925,6 +3688,47 @@
                 } else {
                     hideLoginModal();
                     showToast('Please try again', 'error');
+                }
+            });
+            
+            // Booking modal event listeners
+            closeBookingModal.addEventListener('click', function() {
+                bookingModal.style.display = 'none';
+            });
+            
+            // Close on outside click
+            bookingModal.addEventListener('click', function(e) {
+                if (e.target === bookingModal) {
+                    bookingModal.style.display = 'none';
+                }
+            });
+            
+            // Boarding point change
+            boardingPointSelect.addEventListener('change', function() {
+                selectedBoardingPoint = parseInt(this.value);
+                const selectedOption = boardingPointSelect.options[boardingPointSelect.selectedIndex];
+                boardingPointAddress.textContent = selectedOption.getAttribute('data-address') || '';
+            });
+            
+            // Dropping point change
+            droppingPointSelect.addEventListener('change', function() {
+                selectedDroppingPoint = parseInt(this.value);
+                const selectedOption = droppingPointSelect.options[droppingPointSelect.selectedIndex];
+                droppingPointAddress.textContent = selectedOption.getAttribute('data-address') || '';
+            });
+            
+            // Confirm booking button
+            confirmBookingButton.addEventListener('click', completeBooking);
+            
+            // Payment success modal - "Done" button
+            doneButton.addEventListener('click', function() {
+                paymentSuccessModal.style.display = 'none';
+            });
+            
+            // Close payment success modal on outside click
+            paymentSuccessModal.addEventListener('click', function(e) {
+                if (e.target === paymentSuccessModal) {
+                    paymentSuccessModal.style.display = 'none';
                 }
             });
             

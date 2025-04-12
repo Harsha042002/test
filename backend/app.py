@@ -1581,15 +1581,16 @@ class FreshBusAssistant:
                     async with self.http_session.get(seats_url) as response:
                         if response.status == 200:
                             seat_data = await response.json()
-                            if "seats" in seat_data:
+                            if seat_data and isinstance(seat_data, dict) and "seats" in seat_data:
                                 for seat in seat_data["seats"]:
-                                    if (not seat.get('isOccupied', False) and 
+                                    if seat and (not seat.get('isOccupied', False) and 
                                         seat.get('availabilityStatus', '') in ['A', 'M', 'F']):
                                         try:
                                             seat_number = int(seat.get('seatName', '0'))
                                             available_seats.append({
                                                 'number': seat_number,
-                                                'price': seat.get('totalFare', 0)
+                                                'price': seat.get('totalFare', 0),
+                                                'seat_id': seat.get('id', 0)
                                             })
                                         except (ValueError, TypeError):
                                             # Skip invalid seat numbers
@@ -1613,7 +1614,9 @@ class FreshBusAssistant:
                 aisle_seats = []
                 
                 for seat in available_seats:
-                    seat_number = seat['number']
+                    seat_number = seat.get('number')
+                    if not seat_number:
+                        continue
                     
                     # Determine if it's window or aisle based on the CONFIG
                     if seat_number in Config.WINDOW_SEATS:
@@ -1622,15 +1625,15 @@ class FreshBusAssistant:
                         aisle_seats.append(seat)
                 
                 # Sort both lists by price
-                window_seats.sort(key=lambda s: s['price'])
-                aisle_seats.sort(key=lambda s: s['price'])
+                window_seats.sort(key=lambda s: s.get('price', 0))
+                aisle_seats.sort(key=lambda s: s.get('price', 0))
                 
                 # If we have both window and aisle seats, process them
                 if window_seats and aisle_seats:
                     # Get min and max prices
-                    all_prices = [s['price'] for s in window_seats + aisle_seats]
-                    min_price = min(all_prices)
-                    max_price = max(all_prices)
+                    all_prices = [s.get('price', 0) for s in window_seats + aisle_seats]
+                    min_price = min(all_prices) if all_prices else 0
+                    max_price = max(all_prices) if all_prices else 0
                     price_range = max_price - min_price
                     
                     # Define price thresholds with slightly different boundaries
@@ -1639,13 +1642,14 @@ class FreshBusAssistant:
                     
                     # Categorize window seats - FIXED: Check assigned_seats
                     for seat in window_seats:
-                        seat_num = seat['number']
-                        if seat_num in assigned_seats:
+                        seat_num = seat.get('number')
+                        if not seat_num or seat_num in assigned_seats:
                             continue
                             
-                        if seat['price'] <= budget_max:
+                        seat_price = seat.get('price', 0)
+                        if seat_price <= budget_max:
                             recommendations["Budget-Friendly"]["window"].append(seat)
-                        elif seat['price'] >= premium_min:
+                        elif seat_price >= premium_min:
                             recommendations["Premium"]["window"].append(seat)
                         else:
                             recommendations["Reasonable"]["window"].append(seat)
@@ -1654,13 +1658,14 @@ class FreshBusAssistant:
                     
                     # Categorize aisle seats - FIXED: Check assigned_seats
                     for seat in aisle_seats:
-                        seat_num = seat['number']
-                        if seat_num in assigned_seats:
+                        seat_num = seat.get('number')
+                        if not seat_num or seat_num in assigned_seats:
                             continue
                             
-                        if seat['price'] <= budget_max:
+                        seat_price = seat.get('price', 0)
+                        if seat_price <= budget_max:
                             recommendations["Budget-Friendly"]["aisle"].append(seat)
-                        elif seat['price'] >= premium_min:
+                        elif seat_price >= premium_min:
                             recommendations["Premium"]["aisle"].append(seat)
                         else:
                             recommendations["Reasonable"]["aisle"].append(seat)
@@ -1673,30 +1678,34 @@ class FreshBusAssistant:
                         if not recommendations[category]["window"] and category == "Budget-Friendly":
                             # Try to get the cheapest window seat from Reasonable
                             if recommendations["Reasonable"]["window"]:
-                                seat_to_move = min(recommendations["Reasonable"]["window"], key=lambda s: s["price"])
-                                seat_num = seat_to_move["number"]
+                                seat_to_move = min(recommendations["Reasonable"]["window"], 
+                                                key=lambda s: s.get("price", float('inf')))
+                                seat_num = seat_to_move.get("number")
                                 # Only move if not already assigned to another category
-                                if seat_num not in assigned_seats or seat_num in [s["number"] for s in recommendations["Reasonable"]["window"]]:
+                                if seat_num and (seat_num not in assigned_seats or 
+                                            seat_num in [s.get("number") for s in recommendations["Reasonable"]["window"]]):
                                     recommendations[category]["window"].append(seat_to_move)
                                     # Remove from Reasonable
                                     recommendations["Reasonable"]["window"] = [
                                         s for s in recommendations["Reasonable"]["window"] 
-                                        if s["number"] != seat_to_move["number"]
+                                        if s.get("number") != seat_to_move.get("number")
                                     ]
                         
                         # If we're missing aisle seats in this category
                         if not recommendations[category]["aisle"] and category == "Budget-Friendly":
                             # Try to get the cheapest aisle seat from Reasonable
                             if recommendations["Reasonable"]["aisle"]:
-                                seat_to_move = min(recommendations["Reasonable"]["aisle"], key=lambda s: s["price"])
-                                seat_num = seat_to_move["number"]
+                                seat_to_move = min(recommendations["Reasonable"]["aisle"], 
+                                                key=lambda s: s.get("price", float('inf')))
+                                seat_num = seat_to_move.get("number")
                                 # Only move if not already assigned to another category
-                                if seat_num not in assigned_seats or seat_num in [s["number"] for s in recommendations["Reasonable"]["aisle"]]:
+                                if seat_num and (seat_num not in assigned_seats or 
+                                            seat_num in [s.get("number") for s in recommendations["Reasonable"]["aisle"]]):
                                     recommendations[category]["aisle"].append(seat_to_move)
                                     # Remove from Reasonable
                                     recommendations["Reasonable"]["aisle"] = [
                                         s for s in recommendations["Reasonable"]["aisle"] 
-                                        if s["number"] != seat_to_move["number"]
+                                        if s.get("number") != seat_to_move.get("number")
                                     ]
             
             # Final verification step to ensure no duplicates
@@ -1705,12 +1714,12 @@ class FreshBusAssistant:
                 for position in ["window", "aisle"]:
                     unique_seats = []
                     for seat in recommendations[category][position]:
-                        seat_num = seat["number"]
-                        if seat_num not in seen_seats:
+                        seat_num = seat.get("number")
+                        if seat_num and seat_num not in seen_seats:
                             seen_seats[seat_num] = f"{category}-{position}"
                             unique_seats.append(seat)
-                        else:
-                            print(f"Preventing duplicate: Seat {seat_num} already in {seen_seats[seat_num]}")
+                        elif seat_num:
+                            print(f"Preventing duplicate: Seat {seat_num} already in {seen_seats.get(seat_num, 'unknown')}")
                     recommendations[category][position] = unique_seats
             
             # Build JSON output for this bus
@@ -1744,16 +1753,18 @@ class FreshBusAssistant:
                 if recommendations[category]["window"]:
                     window_seat = recommendations[category]["window"][0]
                     json_bus["recommendations"][category_key]["window"] = {
-                        "seatNumber": str(window_seat["number"]),
-                        "price": str(window_seat["price"])
+                        "seatNumber": str(window_seat.get("number", "")),
+                        "price": str(window_seat.get("price", "")),
+                        "seat_id": str(window_seat.get("seat_id", 0))
                     }
                 
                 # Add aisle seat if available
                 if recommendations[category]["aisle"]:
                     aisle_seat = recommendations[category]["aisle"][0]
                     json_bus["recommendations"][category_key]["aisle"] = {
-                        "seatNumber": str(aisle_seat["number"]),
-                        "price": str(aisle_seat["price"])
+                        "seatNumber": str(aisle_seat.get("number", "")),
+                        "price": str(aisle_seat.get("price", "")),
+                        "seat_id": str(aisle_seat.get("seat_id", 0))
                     }
                     
             # For JSON output, fetch all boarding and dropping points
@@ -1775,17 +1786,20 @@ class FreshBusAssistant:
                         if response.status == 200:
                             boarding_data = await response.json()
                             # Format boarding points into a simplified structure
-                            for point in boarding_data:
-                                bp_info = point.get('boardingPoint', {})
-                                formatted_point = {
-                                    "name": bp_info.get('name', 'Unknown'),
-                                    "landmark": bp_info.get('landmark', ''),
-                                    "time": point.get('time', ''),
-                                    "latitude": bp_info.get('latitude'),
-                                    "longitude": bp_info.get('longitude'),
-                                    "address": bp_info.get('address', '')
-                                }
-                                boarding_points.append(formatted_point)
+                            if boarding_data and isinstance(boarding_data, list):
+                                for point in boarding_data:
+                                    if point:
+                                        bp_info = point.get('boardingPoint', {}) or {}
+                                        formatted_point = {
+                                            "name": bp_info.get('name', 'Unknown'),
+                                            "landmark": bp_info.get('landmark', ''),
+                                            "time": point.get('time', ''),
+                                            "latitude": bp_info.get('latitude'),
+                                            "longitude": bp_info.get('longitude'),
+                                            "address": bp_info.get('address', ''),
+                                            "id": bp_info.get('id', 100)  # Add ID for booking
+                                        }
+                                        boarding_points.append(formatted_point)
                         else:
                             print(f"Failed to fetch boarding points: Status {response.status}")
                 except Exception as e:
@@ -1800,17 +1814,20 @@ class FreshBusAssistant:
                         if response.status == 200:
                             dropping_data = await response.json()
                             # Format dropping points into a simplified structure
-                            for point in dropping_data:
-                                dp_info = point.get('droppingPoint', {})
-                                formatted_point = {
-                                    "name": dp_info.get('name', 'Unknown'),
-                                    "landmark": dp_info.get('landmark', ''),
-                                    "time": point.get('time', ''),
-                                    "latitude": dp_info.get('latitude'),
-                                    "longitude": dp_info.get('longitude'),
-                                    "address": dp_info.get('address', '')
-                                }
-                                dropping_points.append(formatted_point)
+                            if dropping_data and isinstance(dropping_data, list):
+                                for point in dropping_data:
+                                    if point:
+                                        dp_info = point.get('droppingPoint', {}) or {}
+                                        formatted_point = {
+                                            "name": dp_info.get('name', 'Unknown'),
+                                            "landmark": dp_info.get('landmark', ''),
+                                            "time": point.get('time', ''),
+                                            "latitude": dp_info.get('latitude'),
+                                            "longitude": dp_info.get('longitude'),
+                                            "address": dp_info.get('address', ''),
+                                            "id": dp_info.get('id', 120)  # Add ID for booking
+                                        }
+                                        dropping_points.append(formatted_point)
                         else:
                             print(f"Failed to fetch dropping points: Status {response.status}")
                 except Exception as e:
@@ -1819,6 +1836,54 @@ class FreshBusAssistant:
                 # Add the boarding and dropping points to the JSON output
                 json_bus["all_boarding_points"] = boarding_points
                 json_bus["all_dropping_points"] = dropping_points
+                
+                # Add booking info to JSON
+                user_data = context.get('user', {}) or {}
+                selected_boarding_point_id = None
+                selected_dropping_point_id = None
+                
+                # Get default boarding/dropping point IDs
+                if boarding_points and len(boarding_points) > 0:
+                    selected_boarding_point_id = boarding_points[0].get('id', 100)
+                    
+                if dropping_points and len(dropping_points) > 0:
+                    selected_dropping_point_id = dropping_points[0].get('id', 120)
+                    
+                # Get the recommended seat for booking (reasonable window as default)
+                recommended_seat = None
+                seat_id = None
+                
+                reasonable_key = "reasonable"
+                if reasonable_key in json_bus["recommendations"]:
+                    rec_reasonable = json_bus["recommendations"][reasonable_key]
+                    if "window" in rec_reasonable and rec_reasonable["window"]:
+                        recommended_seat = rec_reasonable["window"]
+                        if "seat_id" in recommended_seat:
+                            seat_id = int(recommended_seat.get("seat_id", 0))
+                
+                # Add booking info
+                json_bus["booking_info"] = {
+                    "mobile": user_data.get('mobile', "9154227800"),
+                    "email": user_data.get('email', "user@example.com"),
+                    "seat_map": [
+                        {
+                            "passenger_age": 25,
+                            "seat_id": seat_id or 681775,
+                            "passenger_name": user_data.get('name', "Passenger"),
+                            "gender": context.get('gender', "Male") or "Male"
+                        }
+                    ],
+                    "trip_id": int(trip_id) if str(trip_id).isdigit() else 32692,
+                    "boarding_point_id": selected_boarding_point_id or 100,
+                    "dropping_point_id": selected_dropping_point_id or 120,
+                    "boarding_point_time": trip.get('boardingtime', "2025-04-11T23:20:00.000Z"),
+                    "dropping_point_time": trip.get('droppingtime', "2025-04-12T07:30:00.000Z"),
+                    "total_collect_amount": float(bus_data.get('fare', 0)),
+                    "main_category": 1,
+                    "freshcardId": 1,
+                    "freshcard": False,
+                    "return_url": "https://freshbus.com/booking-confirmation"
+                }
             
             # Add to JSON output
             json_output["trips"].append(json_bus)
@@ -1842,38 +1907,47 @@ class FreshBusAssistant:
                 has_recommendations = False
                 
                 # Check if API provides data for this category
-                if api_data.get("recommendations") and api_data["recommendations"].get(category):
+                api_recommendations = api_data.get("recommendations", {}) or {}
+                category_recs = api_recommendations.get(category, {}) or {}
+                
+                if category_recs:
                     # Get window seat recommendation if available
-                    if (api_data["recommendations"][category].get("window") and 
-                        len(api_data["recommendations"][category]["window"]) > 0):
-                        window_seat = api_data["recommendations"][category]["window"][0].get("number", "")
-                        window_price = api_data["recommendations"][category]["window"][0].get("price", "")
+                    window_recs = category_recs.get("window", [])
+                    if window_recs and len(window_recs) > 0 and isinstance(window_recs[0], dict):
+                        window_seat = window_recs[0].get("number", "")
+                        window_price = window_recs[0].get("price", "")
                         if window_seat and window_price:
                             window_info = f"Window {window_seat} (₹{window_price})"
                             has_recommendations = True
                     
                     # Get aisle seat recommendation if available
-                    if (api_data["recommendations"][category].get("aisle") and 
-                        len(api_data["recommendations"][category]["aisle"]) > 0):
-                        aisle_seat = api_data["recommendations"][category]["aisle"][0].get("number", "")
-                        aisle_price = api_data["recommendations"][category]["aisle"][0].get("price", "")
+                    aisle_recs = category_recs.get("aisle", [])
+                    if aisle_recs and len(aisle_recs) > 0 and isinstance(aisle_recs[0], dict):
+                        aisle_seat = aisle_recs[0].get("number", "")
+                        aisle_price = aisle_recs[0].get("price", "")
                         if aisle_seat and aisle_price:
                             aisle_info = f"Aisle {aisle_seat} (₹{aisle_price})"
                             has_recommendations = True
                 
                 # Use our generated recommendations if API data doesn't have them
-                elif recommendations[category]["window"] or recommendations[category]["aisle"]:
-                    if recommendations[category]["window"] and len(recommendations[category]["window"]) > 0:
-                        window_seat = recommendations[category]["window"][0]["number"]
-                        window_price = recommendations[category]["window"][0]["price"]
-                        window_info = f"Window {window_seat} (₹{window_price})"
-                        has_recommendations = True
+                if not has_recommendations and (recommendations[category]["window"] or recommendations[category]["aisle"]):
+                    if recommendations[category]["window"]:
+                        window_seats = recommendations[category]["window"]
+                        if window_seats and len(window_seats) > 0:
+                            window_seat = window_seats[0].get("number")
+                            window_price = window_seats[0].get("price")
+                            if window_seat and window_price:
+                                window_info = f"Window {window_seat} (₹{window_price})"
+                                has_recommendations = True
                     
-                    if recommendations[category]["aisle"] and len(recommendations[category]["aisle"]) > 0:
-                        aisle_seat = recommendations[category]["aisle"][0]["number"]
-                        aisle_price = recommendations[category]["aisle"][0]["price"]
-                        aisle_info = f"Aisle {aisle_seat} (₹{aisle_price})"
-                        has_recommendations = True
+                    if recommendations[category]["aisle"]:
+                        aisle_seats = recommendations[category]["aisle"]
+                        if aisle_seats and len(aisle_seats) > 0:
+                            aisle_seat = aisle_seats[0].get("number")
+                            aisle_price = aisle_seats[0].get("price")
+                            if aisle_seat and aisle_price:
+                                aisle_info = f"Aisle {aisle_seat} (₹{aisle_price})"
+                                has_recommendations = True
                 
                 # Add the seat information if available, otherwise indicate no data
                 if has_recommendations:
@@ -2287,9 +2361,20 @@ class FreshBusAssistant:
     def get_or_create_session(self, session_id):
         if not session_id:
             session_id = str(uuid.uuid4())
+        
         if session_id not in self.sessions:
+            # Try to get messages from Redis first if available
+            messages = []
+            try:
+                if hasattr(self, 'redis_session_manager'):
+                    messages = self.redis_session_manager.get_messages(session_id)
+                    print(f"Retrieved {len(messages)} messages from Redis for session {session_id}")
+            except Exception as e:
+                print(f"Error retrieving messages from Redis: {e}")
+            
+            # If no messages in Redis, initialize with empty list
             self.sessions[session_id] = {
-                "messages": [],
+                "messages": messages or [],
                 "last_updated": datetime.now(),
                 "context": {
                     "last_source": None,
@@ -2306,7 +2391,7 @@ class FreshBusAssistant:
                     "user_requested_destination": None,
                     "auth": None,
                     "user": None,
-                    "user_profile": None  # Add this new field for user profile
+                    "user_profile": None
                 }
             }
         return self.sessions[session_id], session_id
@@ -3968,6 +4053,13 @@ class FreshBusAssistant:
         session, session_id = self.get_or_create_session(session_id)
         context = session['context']
         
+        # Print session info for debugging
+        print(f"Session ID: {session_id}")
+        if session_id in self.sessions:
+            print(f"Current session messages count: {len(self.sessions[session_id]['messages'])}")
+            for i, msg in enumerate(self.sessions[session_id]['messages'][-5:]):  # Show last 5 messages
+                print(f"Message {i}: {msg['role']} - {msg['content'][:30]}...")
+        
         # Determine if this is a simple query that shouldn't use fallback
         is_simple_query = query.lower() in ["hi", "hello", "hey"] or "name" in query.lower() or "who are you" in query.lower()
         print(f"Is simple query: {is_simple_query}")
@@ -4004,13 +4096,15 @@ class FreshBusAssistant:
         user_data = None
         user_mobile = None
         auth_token = None
+        user_id = None
         
         if context.get('auth') and context.get('user'):
             user_authenticated = True
             user_data = context['user']
             user_mobile = user_data.get('mobile')
+            user_id = user_data.get('id')  # Get user ID from context if available
             auth_token = context['auth'].get('token')
-            print(f"Processing request for authenticated user: {user_mobile}")
+            print(f"Processing request for authenticated user: {user_mobile} (ID: {user_id})")
         
         # Store location if provided
         if user_location and user_location.get('latitude') and user_location.get('longitude'):
@@ -4175,6 +4269,11 @@ class FreshBusAssistant:
                 if user_profile:
                     context['user_profile'] = user_profile
                     api_data["user_profile"] = user_profile
+                    
+                    # Store user ID from profile if available
+                    if 'id' in user_profile and not user_id:
+                        user_id = user_profile['id']
+                        
                     print("Fetched user profile")
             else:
                 api_data["user_profile"] = context.get('user_profile')
@@ -4454,10 +4553,23 @@ class FreshBusAssistant:
             # Save the direct response
             session['messages'].append({"role": "assistant", "content": direct_response})
             
-            # Try to save to Redis
+            # Try to save to Redis with user ID
             try:
-                conversation_id = conversation_manager.save_conversation(session_id, session['messages'])
-                print(f"Saved direct trip ended response to Redis: {conversation_id}")
+                # Extract user ID from auth context or from previously fetched profile data
+                if not user_id and context.get('auth') and context.get('user'):
+                    user_data = context['user']
+                    user_id = user_data.get('id') or user_data.get('mobile')  # Use ID first, fallback to mobile
+                
+                # Also check if we have ID in user_profile
+                if not user_id and context.get('user_profile'):
+                    user_id = context['user_profile'].get('id')
+                    
+                conversation_id = conversation_manager.save_conversation(
+                    session_id, 
+                    session['messages'], 
+                    user_id=user_id
+                )
+                print(f"Saved direct trip ended response to Redis: {conversation_id}, user: {user_id}")
             except Exception as redis_err:
                 print(f"Failed to save to Redis: {redis_err}")
                 conversation_id = None
@@ -4492,10 +4604,23 @@ class FreshBusAssistant:
             # Save the direct response
             session['messages'].append({"role": "assistant", "content": direct_response})
             
-            # Try to save to Redis
+            # Try to save to Redis with user ID
             try:
-                conversation_id = conversation_manager.save_conversation(session_id, session['messages'])
-                print(f"Saved invalid route response to Redis: {conversation_id}")
+                # Extract user ID from auth context, user_profile, or previously set value
+                if not user_id and context.get('auth') and context.get('user'):
+                    user_data = context['user']
+                    user_id = user_data.get('id') or user_data.get('mobile')
+                
+                # Also check if we have ID in user_profile
+                if not user_id and context.get('user_profile'):
+                    user_id = context['user_profile'].get('id')
+                    
+                conversation_id = conversation_manager.save_conversation(
+                    session_id, 
+                    session['messages'], 
+                    user_id=user_id
+                )
+                print(f"Saved invalid route response to Redis: {conversation_id}, user: {user_id}")
             except Exception as redis_err:
                 print(f"Failed to save to Redis: {redis_err}")
                 conversation_id = None
@@ -4525,10 +4650,23 @@ class FreshBusAssistant:
             # Save the direct response
             session['messages'].append({"role": "assistant", "content": direct_response})
             
-            # Try to save to Redis
+            # Try to save to Redis with user ID
             try:
-                conversation_id = conversation_manager.save_conversation(session_id, session['messages'])
-                print(f"Saved direct response to Redis: {conversation_id}")
+                # Extract user ID from auth context, user_profile, or previously set value
+                if not user_id and context.get('auth') and context.get('user'):
+                    user_data = context['user']
+                    user_id = user_data.get('id') or user_data.get('mobile')
+                
+                # Also check if we have ID in user_profile
+                if not user_id and context.get('user_profile'):
+                    user_id = context['user_profile'].get('id')
+                    
+                conversation_id = conversation_manager.save_conversation(
+                    session_id, 
+                    session['messages'], 
+                    user_id=user_id
+                )
+                print(f"Saved direct response to Redis: {conversation_id}, user: {user_id}")
             except Exception as redis_err:
                 print(f"Failed to save to Redis: {redis_err}")
                 conversation_id = None
@@ -4617,7 +4755,7 @@ class FreshBusAssistant:
         # Add user authentication info if available
         if user_authenticated:
             system_message += f"\n\n--- USER INFORMATION ---"
-            system_message += f"\nAuthenticated user: {user_mobile}"
+            system_message += f"\nAuthenticated user: {user_mobile}" + (f" (ID: {user_id})" if user_id else "")
             
             # Add user preferences if available
             if api_data.get("user_preferences"):
@@ -4731,10 +4869,27 @@ class FreshBusAssistant:
             input_tokens = 0  # Reset if there's an error
         
         print(f"System message token count: {input_tokens}")
-        recent_messages = session['messages'][-3:]
+        
+        # Get complete message history for the session
+        complete_message_history = session['messages']
+        
+        # If conversation gets too long, we can optionally limit it while still keeping more context
+        max_history_length = 50  # Adjust this value based on your needs
+        if len(complete_message_history) > max_history_length:
+            # Keep first message (system context) and most recent messages
+            complete_message_history = [
+                complete_message_history[0],  # System message
+                *complete_message_history[-(max_history_length-1):]  # Most recent messages
+            ]
+            # Keep first message for context and the most recent messages
+            first_message = complete_message_history[0:1]
+            recent_messages = complete_message_history[-(max_history_length-1):]
+            complete_message_history = first_message + recent_messages
+            
+        print(f"Using {len(complete_message_history)} messages from conversation history")
         
         try:
-            # Generate response using the AI provider abstraction
+            # Generate response using the AI provider abstraction with full history
             response_text = ""
             
             print(f"Sending to {self.ai_provider.provider_name} with system message length: {len(system_message)}")
@@ -4743,7 +4898,7 @@ class FreshBusAssistant:
             async for chunk in self.ai_provider.generate_stream(
                 prompt=query,
                 system_message=system_message,
-                messages=recent_messages,
+                messages=complete_message_history,  # Use full history instead of recent_messages
                 max_tokens=Config.DEFAULT_TOKEN_LIMIT,
                 temperature=0.7
             ):
@@ -4789,11 +4944,29 @@ class FreshBusAssistant:
                         print(f"Request cost: ${usage_data['total_cost']:.5f} " + 
                             f"({usage_data['input_tokens']} input + {usage_data['output_tokens']} output tokens)")
                         
-                        # Save conversation to Redis if available
+                        # Save conversation to Redis with user ID if available
                         try:
-                            conversation_id = conversation_manager.save_conversation(session_id, session['messages'])
+                            # Use user_id from various sources in priority order
+                            redis_user_id = None
+                            
+                            # 1. First try user_id we've already determined
+                            if user_id:
+                                redis_user_id = user_id
+                            # 2. Try auth context
+                            elif context.get('auth') and context.get('user'):
+                                user_data = context['user']
+                                redis_user_id = user_data.get('id') or user_data.get('mobile')
+                            # 3. Try user profile
+                            elif context.get('user_profile'):
+                                redis_user_id = context['user_profile'].get('id')
+                                
+                            conversation_id = conversation_manager.save_conversation(
+                                session_id, 
+                                session['messages'], 
+                                user_id=redis_user_id
+                            )
                             if conversation_id:
-                                print(f"Saved conversation to Redis with ID: {conversation_id}")
+                                print(f"Saved conversation to Redis with ID: {conversation_id}, user: {redis_user_id}")
                         except Exception as redis_err:
                             print(f"Failed to save to Redis: {redis_err}")
                             conversation_id = None
@@ -4834,11 +5007,29 @@ class FreshBusAssistant:
                 print("Using direct bus response generation due to AI API error")
                 session['messages'].append({"role": "assistant", "content": direct_response})
                 
-                # Try to save to Redis
+                # Try to save to Redis with user ID
                 try:
-                    conversation_id = conversation_manager.save_conversation(session_id, session['messages'])
+                    # Use user_id from various sources in priority order
+                    redis_user_id = None
+                    
+                    # 1. First try user_id we've already determined
+                    if user_id:
+                        redis_user_id = user_id
+                    # 2. Try auth context
+                    elif context.get('auth') and context.get('user'):
+                        user_data = context['user']
+                        redis_user_id = user_data.get('id') or user_data.get('mobile')
+                    # 3. Try user profile
+                    elif context.get('user_profile'):
+                        redis_user_id = context['user_profile'].get('id')
+                            
+                    conversation_id = conversation_manager.save_conversation(
+                        session_id, 
+                        session['messages'], 
+                        user_id=redis_user_id
+                    )
                     if conversation_id:
-                        print(f"Saved direct response to Redis: {conversation_id}")
+                        print(f"Saved direct response to Redis: {conversation_id}, user: {redis_user_id}")
                 except Exception as redis_err:
                     print(f"Failed to save to Redis: {redis_err}")
                     conversation_id = None
@@ -4868,11 +5059,29 @@ class FreshBusAssistant:
                     
                 session['messages'].append({"role": "assistant", "content": simple_response})
                 
-                # Try to save to Redis
+                # Try to save to Redis with user ID
                 try:
-                    conversation_id = conversation_manager.save_conversation(session_id, session['messages'])
+                    # Use user_id from various sources in priority order
+                    redis_user_id = None
+                    
+                    # 1. First try user_id we've already determined
+                    if user_id:
+                        redis_user_id = user_id
+                    # 2. Try auth context
+                    elif context.get('auth') and context.get('user'):
+                        user_data = context['user']
+                        redis_user_id = user_data.get('id') or user_data.get('mobile')
+                    # 3. Try user profile
+                    elif context.get('user_profile'):
+                        redis_user_id = context['user_profile'].get('id')
+                            
+                    conversation_id = conversation_manager.save_conversation(
+                        session_id, 
+                        session['messages'], 
+                        user_id=redis_user_id
+                    )
                     if conversation_id:
-                        print(f"Saved simple response to Redis: {conversation_id}")
+                        print(f"Saved simple response to Redis: {conversation_id}, user: {redis_user_id}")
                 except Exception as redis_err:
                     print(f"Failed to save to Redis: {redis_err}")
                     conversation_id = None
@@ -4909,11 +5118,29 @@ class FreshBusAssistant:
                 print("Using fallback response mechanism due to API error")
                 session['messages'].append({"role": "assistant", "content": fallback_response})
                 
-                # Try to save to Redis even with fallback
+                # Try to save to Redis with user ID
                 try:
-                    conversation_id = conversation_manager.save_conversation(session_id, session['messages'])
+                    # Use user_id from various sources in priority order
+                    redis_user_id = None
+                    
+                    # 1. First try user_id we've already determined
+                    if user_id:
+                        redis_user_id = user_id
+                    # 2. Try auth context
+                    elif context.get('auth') and context.get('user'):
+                        user_data = context['user']
+                        redis_user_id = user_data.get('id') or user_data.get('mobile')
+                    # 3. Try user profile
+                    elif context.get('user_profile'):
+                        redis_user_id = context['user_profile'].get('id')
+                            
+                    conversation_id = conversation_manager.save_conversation(
+                        session_id, 
+                        session['messages'], 
+                        user_id=redis_user_id
+                    )
                     if conversation_id:
-                        print(f"Saved fallback conversation to Redis: {conversation_id}")
+                        print(f"Saved fallback conversation to Redis: {conversation_id}, user: {redis_user_id}")
                 except Exception as redis_err:
                     print(f"Failed to save to Redis: {redis_err}")
                     conversation_id = None
@@ -4959,6 +5186,32 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # API Endpoints
 #################################
 
+def setup_middleware(app_instance):
+    @app_instance.middleware("http")
+    async def authenticate_user(request: Request, call_next):
+        """Middleware to authenticate user and add user data to request"""
+        # Get the auth token from the request headers
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            auth_token = auth_header.replace("Bearer ", "")
+            try:
+                # Get user profile using the token
+                profile_data = await fresh_bus_assistant.fetch_user_profile(auth_token)
+                if profile_data:
+                    # Add user data to request state
+                    request.state.user = profile_data
+                    # Also add the token
+                    request.state.token = auth_token
+            except Exception as e:
+                print(f"Error authenticating user: {e}")
+        
+        # Continue with the request
+        response = await call_next(request)
+        return response
+
+# Then call this function with app
+setup_middleware(app)
+
 @app.get("/api/models")
 async def get_available_models():
     """Get list of available AI models."""
@@ -4975,6 +5228,241 @@ async def get_current_model():
             fresh_bus_assistant.ai_provider.model
         )
     })
+
+@app.post("/book-ticket")
+async def book_ticket(request: Request):
+    """Book a ticket with passenger details"""
+    try:
+        # Get the request body
+        booking_data = await request.json()
+        
+        # Check if all required fields are present
+        required_fields = ["mobile", "email", "trip_id", "boarding_point_id", 
+                          "dropping_point_id", "seat_map"]
+        
+        for field in required_fields:
+            if field not in booking_data:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": f"Missing required field: {field}"}
+                )
+        
+        # Get the auth token from the request headers
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return JSONResponse(
+                status_code=401,
+                content={"success": False, "message": "Authentication required"}
+            )
+        
+        auth_token = auth_header.replace("Bearer ", "")
+        
+        # Initialize HTTP session if needed
+        if not fresh_bus_assistant.http_session:
+            await fresh_bus_assistant.init_http_session()
+        
+        # Prepare the booking request
+        booking_payload = {
+            "mobile": booking_data["mobile"],
+            "email": booking_data["email"],
+            "seat_map": booking_data["seat_map"],
+            "trip_id": booking_data["trip_id"],
+            "boarding_point_id": booking_data["boarding_point_id"],
+            "dropping_point_id": booking_data["dropping_point_id"],
+            "boarding_point_time": booking_data.get("boarding_point_time", "2025-04-11T23:20:00.000Z"),
+            "dropping_point_time": booking_data.get("dropping_point_time", "2025-04-12T07:30:00.000Z"),
+            "total_collect_amount": booking_data.get("total_collect_amount", 0),
+            "main_category": booking_data.get("main_category", 1),
+            "freshcard": booking_data.get("freshcard", False),
+            "freshcardId": booking_data.get("freshcardId", 1),
+            "return_url": booking_data.get("return_url", "https://freshbus.com/booking-confirmation")
+        }
+        
+        # Make the booking API call to the correct endpoint
+        booking_url = f"{fresh_bus_assistant.BASE_URL_CUSTOMER}/tickets/block"
+        
+        headers = {
+            "Authorization": f"Bearer {auth_token}",
+            "Content-Type": "application/json"
+        }
+        
+        print(f"Sending booking request to {booking_url} with payload: {booking_payload}")
+        
+        async with fresh_bus_assistant.http_session.post(
+            booking_url, 
+            json=booking_payload,
+            headers=headers
+        ) as response:
+            response_data = await response.json()
+            
+            if response.status == 200:
+                # Booking successful
+                return JSONResponse(
+                    content={
+                        "success": True,
+                        "message": "Ticket booked successfully",
+                        "booking_details": response_data
+                    }
+                )
+            else:
+                # Booking failed
+                error_message = response_data.get("message", "Unknown error")
+                return JSONResponse(
+                    status_code=response.status,
+                    content={"success": False, "message": f"Booking failed: {error_message}"}
+                )
+                
+    except Exception as e:
+        print(f"Error booking ticket: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"Error booking ticket: {str(e)}"}
+        )
+    
+
+@app.route("/profile", methods=["GET"])
+async def get_user_profile(request: Request):
+    """Fetch user profile from the customer service"""
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    if not token:
+        return JSONResponse(
+            status_code=401, 
+            content={"error": "No authorization token provided"}
+        )
+    
+    try:
+        # Forward request to customer service
+        if not fresh_bus_assistant.http_session:
+            await fresh_bus_assistant.init_http_session()
+        
+        base_url_customer = fresh_bus_assistant.BASE_URL_CUSTOMER
+        
+        async with fresh_bus_assistant.http_session.get(
+            f"{base_url_customer}/profile",
+            headers={"Authorization": f"Bearer {token}"}
+        ) as response:
+            if response.status == 200:
+                profile_data = await response.json()
+                # Cache the user profile in Redis for faster access
+                user_id = str(profile_data['id'])
+                
+                # Store in Redis conversation manager
+                conversation_manager.update_user_profile(user_id, profile_data)
+                
+                # Also store in memory for the session if active
+                if 'user' in request.session:
+                    request.session['user_profile'] = profile_data
+                
+                return JSONResponse(content=profile_data)
+            else:
+                error_text = await response.text()
+                return JSONResponse(
+                    status_code=response.status,
+                    content={"error": f"Failed to fetch profile: {error_text}"}
+                )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Error fetching profile: {str(e)}"}
+        )
+
+@app.get("/user/conversations")
+async def get_user_conversations(
+    request: Request,
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0)
+):
+    """Get conversations for the authenticated user"""
+    try:
+        # Get the auth token from the request headers
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Authentication required"}
+            )
+        
+        auth_token = auth_header.replace("Bearer ", "")
+        
+        # Get user profile to get user ID
+        if not fresh_bus_assistant.http_session:
+            await fresh_bus_assistant.init_http_session()
+        
+        profile_data = await fresh_bus_assistant.fetch_user_profile(auth_token)
+        if not profile_data:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "User profile not found"}
+            )
+            
+        # Use ID from profile data
+        user_id = str(profile_data.get("id"))
+        if not user_id:
+            user_id = profile_data.get("mobile")  # Fallback to mobile if ID not available
+            
+        if not user_id:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "User ID not found in profile"}
+            )
+        
+        # Get user's conversations
+        conversations = conversation_manager.get_conversations_by_user(user_id, limit, offset)
+        return JSONResponse(content=conversations)
+    except Exception as e:
+        print(f"Error getting user conversations: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Error retrieving conversations: {str(e)}"}
+        )
+
+@app.delete("/user/conversations")
+async def delete_user_conversations(request: Request):
+    """Delete all conversations for the authenticated user"""
+    try:
+        # Get the auth token from the request headers
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Authentication required"}
+            )
+        
+        auth_token = auth_header.replace("Bearer ", "")
+        
+        # Get user profile to get user ID
+        if not fresh_bus_assistant.http_session:
+            await fresh_bus_assistant.init_http_session()
+        
+        profile_data = await fresh_bus_assistant.fetch_user_profile(auth_token)
+        if not profile_data:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "User profile not found"}
+            )
+            
+        # Use ID from profile data
+        user_id = str(profile_data.get("id"))
+        if not user_id:
+            user_id = profile_data.get("mobile")  # Fallback to mobile if ID not available
+            
+        if not user_id:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "User ID not found in profile"}
+            )
+        
+        # Delete user's conversations
+        count = conversation_manager.delete_user_conversations(user_id)
+        return JSONResponse(
+            content={"status": "success", "message": f"Deleted {count} conversations"}
+        )
+    except Exception as e:
+        print(f"Error deleting user conversations: {e}")
+        return JSONResponse(
+            status_code=500, 
+            content={"error": f"Error deleting conversations: {str(e)}"}
+        )
 
 @app.post("/api/select-model")
 async def select_model(selection: ModelSelectionRequest):
@@ -5547,6 +6035,7 @@ async def query(request: Request):
         body = await request.json()
         query = body.get("query")
         session_id = body.get("session_id")
+        user_id = body.get("user_id")  # Added user_id parameter
         provider = body.get("provider")
         model = body.get("model")
 
@@ -5556,12 +6045,28 @@ async def query(request: Request):
                 content={"error": "Query is required"}
             )
 
-        response_generator = fresh_bus_assistant.generate_response(
-            query=query,
-            session_id=session_id,
-            provider=provider,
-            model=model
-        )
+        # Build parameters object for generate_response
+        params = {
+            "query": query,
+            "session_id": session_id,
+            "provider": provider,
+            "model": model
+        }
+        
+        # Add user location if available
+        if body.get("location"):
+            params["user_location"] = body.get("location")
+        
+        # Add gender if available
+        if body.get("gender"):
+            params["user_gender"] = body.get("gender")
+        
+        # Add detected language if available
+        if body.get("language"):
+            params["detected_language"] = body.get("language")
+
+        # Generate response
+        response_generator = fresh_bus_assistant.generate_response(**params)
 
         async def stream_response():
             try:
@@ -5582,6 +6087,23 @@ async def query(request: Request):
                         yield f"data: {json.dumps({'error': chunk['error'], 'done': True})}\n\n"
                         return
                     
+                    # If this is the final chunk with done=True
+                    if chunk.get("done") and "conversation_id" in chunk:
+                        # If we have user_id and a new conversation was created
+                        if user_id and chunk.get("conversation_id"):
+                            try:
+                                # Associate the conversation with the user
+                                conversation_manager.redis.sadd(
+                                    f"{conversation_manager.user_index_prefix}{user_id}", 
+                                    chunk.get("conversation_id")
+                                )
+                                # Add user_id to the conversation data
+                                conversation_key = f"{conversation_manager.conversation_prefix}{chunk.get('conversation_id')}"
+                                conversation_manager.redis.hset(conversation_key, "user_id", user_id)
+                                print(f"Associated conversation {chunk.get('conversation_id')} with user {user_id}")
+                            except Exception as e:
+                                print(f"Error associating conversation with user: {e}")
+                    
                     yield f"data: {json.dumps(chunk)}\n\n"
             except Exception as e:
                 error_msg = f"Error in stream_response: {str(e)}"
@@ -5601,6 +6123,174 @@ async def query(request: Request):
         return JSONResponse(
             status_code=500,
             content={"error": str(e)}
+        )
+
+@app.get("/trips/{trip_id}/boarding-points/{source_id}")
+async def get_boarding_points(trip_id: str, source_id: str):
+    """Get boarding points for a specific trip"""
+    try:
+        if not fresh_bus_assistant.http_session:
+            await fresh_bus_assistant.init_http_session()
+            
+        boarding_points = await fresh_bus_assistant.fetch_boarding_points(trip_id, source_id)
+        
+        if not boarding_points:
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "message": "No boarding points found"}
+            )
+            
+        return JSONResponse(content=boarding_points)
+    except Exception as e:
+        print(f"Error fetching boarding points: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"Error fetching boarding points: {str(e)}"}
+        )
+
+@app.get("/trips/{trip_id}/dropping-points")
+async def get_dropping_points(trip_id: str):
+    """Get dropping points for a specific trip"""
+    try:
+        if not fresh_bus_assistant.http_session:
+            await fresh_bus_assistant.init_http_session()
+            
+        dropping_points = await fresh_bus_assistant.fetch_dropping_points(trip_id)
+        
+        if not dropping_points:
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "message": "No dropping points found"}
+            )
+            
+        return JSONResponse(content=dropping_points)
+    except Exception as e:
+        print(f"Error fetching dropping points: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"Error fetching dropping points: {str(e)}"}
+        )
+
+@app.get("/trips/{trip_id}/seats")
+async def get_seats(trip_id: str, source_id: str, destination_id: str):
+    """Get seats for a specific trip"""
+    try:
+        if not fresh_bus_assistant.http_session:
+            await fresh_bus_assistant.init_http_session()
+            
+        seats_data = await fresh_bus_assistant.fetch_seats(trip_id, source_id, destination_id)
+        
+        if not seats_data:
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "message": "No seat data found"}
+            )
+            
+        return JSONResponse(content=seats_data)
+    except Exception as e:
+        print(f"Error fetching seats: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"Error fetching seats: {str(e)}"}
+        )
+    
+
+    
+@app.post("/book-ticket")
+async def book_ticket(request: Request):
+    """Book a ticket with passenger details"""
+    try:
+        # Get the request body
+        booking_data = await request.json()
+        
+        # Check if all required fields are present
+        required_fields = ["mobile", "email", "trip_id", "boarding_point_id", 
+                          "dropping_point_id", "seat_map"]
+        
+        for field in required_fields:
+            if field not in booking_data:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": f"Missing required field: {field}"}
+                )
+        
+        # Get the auth token from the request headers
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return JSONResponse(
+                status_code=401,
+                content={"success": False, "message": "Authentication required"}
+            )
+        
+        auth_token = auth_header.replace("Bearer ", "")
+        
+        # Initialize HTTP session if needed
+        if not fresh_bus_assistant.http_session:
+            await fresh_bus_assistant.init_http_session()
+        
+        # Prepare the booking request
+        booking_payload = {
+            "mobile": booking_data["mobile"],
+            "email": booking_data["email"],
+            "seat_map": booking_data["seat_map"],
+            "trip_id": booking_data["trip_id"],
+            "boarding_point_id": booking_data["boarding_point_id"],
+            "dropping_point_id": booking_data["dropping_point_id"],
+            "total_collect_amount": booking_data.get("total_collect_amount", 0),
+            "freshcard": booking_data.get("freshcard", False),
+            "return_url": booking_data.get("return_url", "https://freshbus.com/booking-confirmation")
+        }
+        
+        # Add optional fields if present
+        if "boarding_point_time" in booking_data:
+            booking_payload["boarding_point_time"] = booking_data["boarding_point_time"]
+        
+        if "dropping_point_time" in booking_data:
+            booking_payload["dropping_point_time"] = booking_data["dropping_point_time"]
+        
+        if "main_category" in booking_data:
+            booking_payload["main_category"] = booking_data["main_category"]
+        
+        if "freshcardId" in booking_data and booking_data["freshcard"]:
+            booking_payload["freshcardId"] = booking_data["freshcardId"]
+        
+        # Make the booking API call
+        booking_url = f"{fresh_bus_assistant.BASE_URL}/bookings"
+        
+        headers = {
+            "Authorization": f"Bearer {auth_token}",
+            "Content-Type": "application/json"
+        }
+        
+        async with fresh_bus_assistant.http_session.post(
+            booking_url, 
+            json=booking_payload,
+            headers=headers
+        ) as response:
+            response_data = await response.json()
+            
+            if response.status == 200:
+                # Booking successful
+                return JSONResponse(
+                    content={
+                        "success": True,
+                        "message": "Ticket booked successfully",
+                        "booking_details": response_data
+                    }
+                )
+            else:
+                # Booking failed
+                error_message = response_data.get("message", "Unknown error")
+                return JSONResponse(
+                    status_code=response.status,
+                    content={"success": False, "message": f"Booking failed: {error_message}"}
+                )
+                
+    except Exception as e:
+        print(f"Error booking ticket: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"Error booking ticket: {str(e)}"}
         )
 
 @app.get("/clear-session")
@@ -5634,6 +6324,8 @@ async def read_index():
 #################################
 # Conversation History Endpoints
 #################################
+
+
 
 @app.get("/conversations", response_model=List[ConversationSummary])
 async def get_conversations(

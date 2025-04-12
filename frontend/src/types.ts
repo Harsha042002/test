@@ -1,9 +1,12 @@
+// In types.ts
+// In types.ts
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
   busRoutes?: BusRoute[];
+  rawData?: any; // Add this property to store the complete JSON response
 }
 
 export interface Chat {
@@ -47,5 +50,5 @@ export interface BusRoute {
   endTime: string;
   boardingPoints: string[];
   droppingPoints: string[];
-  seats: Seat[]; // Use the Seat type here
+  seats: Seat[];
 }

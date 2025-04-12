@@ -1,6 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.log
+.env
+myenv/
+venv/
+
+# Node
+node_modules/
+dist/
+build/
+.next/
+.cache/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project specific
+chroma_db/
+ai_usage_logs/
 .aider*
-.env
-.env
-.env
-.env
-.env
+
+# Environment variables
+.env*
+!.env.example
