@@ -24,57 +24,39 @@ class RedisConversationManager:
         print("RedisConversationManager initialized.")
     
     def save_conversation(self, session_id, messages, user_id=None):
-        """Save conversation with optional user_id tagging"""
         try:
             if not messages:
                 return None
             
             conversation_id = str(uuid.uuid4())
-            # Use UTC timestamp for consistency
-            timestamp = datetime.now(timezone.utc).isoformat()
+            timestamp = datetime.now().isoformat()
             
             # Create conversation data
             conversation_data = {
                 "conversation_id": conversation_id,
                 "session_id": session_id,
                 "timestamp": timestamp,
+                "messages": json.dumps(messages)
             }
             
             # Add user_id if provided
             if user_id:
                 conversation_data["user_id"] = str(user_id)
             
-            try:
-                conversation_data["messages"] = json.dumps(messages)
-            except TypeError as e:
-                print(f"Error serializing messages for archival (session {session_id}): {e}")
-                # Try serializing with default=str for difficult types
-                try:
-                    conversation_data["messages"] = json.dumps(messages, default=str)
-                except Exception as json_err:
-                    print(f"Failed to serialize messages even with default=str: {json_err}")
-                    return None
-            
             # Save conversation
             key = f"{self.conversation_prefix}{conversation_id}"
-            pipe = self.redis.pipeline()
-            pipe.hmset(key, conversation_data)
+            self.redis.hmset(key, conversation_data)
             
             # Add to session index
-            pipe.sadd(f"{self.session_index_prefix}{session_id}", conversation_id)
+            self.redis.sadd(f"{self.session_index_prefix}{session_id}", conversation_id)
             
             # Add to user index if user_id is provided
             if user_id:
-                pipe.sadd(f"{self.user_index_prefix}{user_id}", conversation_id)
+                self.redis.sadd(f"fresh_bus:user_index:{user_id}", conversation_id)
             
-            # Add to global index with timestamp as score for sorting
-            timestamp_unix = datetime.fromisoformat(timestamp.replace('Z', '+00:00')).timestamp()
-            pipe.zadd(self.global_index_key, {conversation_id: timestamp_unix})
+            # Add to global index
+            self.redis.zadd("fresh_bus:conversations", {conversation_id: time.time()})
             
-            pipe.execute()
-            
-            print(f"Archived conversation {conversation_id} for session {session_id}" + 
-                  (f" and user {user_id}" if user_id else ""))
             return conversation_id
         except Exception as e:
             print(f"Redis save_conversation error: {e}")

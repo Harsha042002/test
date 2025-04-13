@@ -196,69 +196,126 @@ function Layout() {
                                             // Store the raw JSON data for access to boarding/dropping points
                                             newAssistantMessage.rawData = jsonData;
                                             
-                                            const busRoutes: BusRoute[] = jsonData.trips.map(trip => ({
-                                                id: trip.tripId,
-                                                from: trip.from,
-                                                to: trip.to,
-                                                rating: parseFloat(trip.rating),
-                                                duration: trip.duration,
-                                                startTime: trip.departureTime,
-                                                endTime: trip.arrivalTime,
-                                                boardingPoints: [trip.boardingPoint],
-                                                droppingPoints: [trip.droppingPoint],
-                                                seats: Object.keys(trip.recommendations).flatMap(category => {
-                                                    const catData = trip.recommendations[category as keyof typeof trip.recommendations];
+                                            // Create busRoutes only if we have valid trips with the required data
+                                            const busRoutes: BusRoute[] = [];
+                                            
+                                            for (const trip of jsonData.trips) {
+                                                // Check if trip has the critical information needed
+                                                if (trip.tripId && trip.from && trip.to && trip.recommendations) {
+                                                    // Create consistent boarding/dropping points array structure
+                                                    if (!trip.all_boarding_points) {
+                                                        trip.all_boarding_points = [{
+                                                            id: `${trip.tripId}-boarding-default`,
+                                                            name: trip.boardingPoint || "Main Boarding Point",
+                                                            landmark: 'Main Stop',
+                                                            time: trip.departureTime
+                                                        }];
+                                                    }
+                                                    
+                                                    if (!trip.all_dropping_points) {
+                                                        trip.all_dropping_points = [{
+                                                            id: `${trip.tripId}-dropping-default`,
+                                                            name: trip.droppingPoint || "Main Dropping Point",
+                                                            landmark: 'Main Stop',
+                                                            time: trip.arrivalTime
+                                                        }];
+                                                    }
+                                                    
+                                                    // Ensure we have at least empty arrays for recommendations if missing
+                                                    const categories = ['reasonable', 'premium', 'budget_friendly'];
+                                                    for (const category of categories) {
+                                                        if (!trip.recommendations[category]) {
+                                                            trip.recommendations[category] = {};
+                                                        }
+                                                    }
+                                                    
+                                                    // Create the bus route object with all data we need
+                                                    const busRoute: BusRoute = {
+                                                        id: trip.tripId,
+                                                        from: trip.from,
+                                                        to: trip.to,
+                                                        rating: parseFloat(trip.rating) || 4.5,
+                                                        duration: trip.duration || "Unknown",
+                                                        startTime: trip.departureTime || "Unknown",
+                                                        endTime: trip.arrivalTime || "Unknown",
+                                                        boardingPoints: [trip.boardingPoint || "Default Boarding"],
+                                                        droppingPoints: [trip.droppingPoint || "Default Dropping"],
+                                                        seats: []
+                                                    };
+                                                    
+                                                    // Process seats from recommendations
                                                     const seats: Seat[] = [];
-
-                                                    if (catData.window && catData.window.seatNumber) {
-                                                        seats.push({
-                                                            id: catData.window.seat_id || `${trip.tripId}-${catData.window.seatNumber}-w`,
-                                                            x: 0,
-                                                            y: parseInt(catData.window.seatNumber) || 0,
-                                                            seatName: catData.window.seatNumber,
-                                                            price: parseInt(catData.window.price) || 0,
-                                                            totalFare: parseInt(catData.window.price) || 0,
-                                                            isOccupied: false,
-                                                            availabilityStatus: 'A',
-                                                            isReservedForFemales: false,
-                                                            isReservedForMales: false,
-                                                            fare: { "Base Fare": parseInt(catData.window.price) || 0, GST: 0, Discount: 0 },
-                                                            label: `Window ${catData.window.seatNumber}`,
-                                                            available: true,
-                                                            hasStaticFare: true,
-                                                            isDummy: false,
-                                                            type: category === 'premium' ? 'Premium' :
-                                                                category === 'budget_friendly' ? 'Budget-Friendly' : 'Regular'
-                                                        });
+                                                    for (const category in trip.recommendations) {
+                                                        const catData = trip.recommendations[category];
+                                                        
+                                                        // Process window seat if available
+                                                        if (catData.window && catData.window.seatNumber) {
+                                                            seats.push({
+                                                                id: catData.window.seat_id || `${trip.tripId}-${catData.window.seatNumber}-w`,
+                                                                x: 0,
+                                                                y: parseInt(catData.window.seatNumber) || 0,
+                                                                seatName: catData.window.seatNumber,
+                                                                price: parseInt(catData.window.price) || 0,
+                                                                totalFare: parseInt(catData.window.price) || 0,
+                                                                isOccupied: false,
+                                                                availabilityStatus: 'A',
+                                                                isReservedForFemales: false,
+                                                                isReservedForMales: false,
+                                                                fare: { "Base Fare": parseInt(catData.window.price) || 0, GST: 0, Discount: 0 },
+                                                                label: `Window ${catData.window.seatNumber}`,
+                                                                available: true,
+                                                                hasStaticFare: true,
+                                                                isDummy: false,
+                                                                type: category === 'premium' ? 'Premium' :
+                                                                    category === 'budget_friendly' ? 'Budget-Friendly' : 'Regular'
+                                                            });
+                                                        }
+                                                        
+                                                        // Process aisle seat if available
+                                                        if (catData.aisle && catData.aisle.seatNumber) {
+                                                            seats.push({
+                                                                id: catData.aisle.seat_id || `${trip.tripId}-${catData.aisle.seatNumber}-a`,
+                                                                x: 1,
+                                                                y: parseInt(catData.aisle.seatNumber) || 0,
+                                                                seatName: catData.aisle.seatNumber,
+                                                                price: parseInt(catData.aisle.price) || 0,
+                                                                totalFare: parseInt(catData.aisle.price) || 0,
+                                                                isOccupied: false,
+                                                                availabilityStatus: 'A',
+                                                                isReservedForFemales: false,
+                                                                isReservedForMales: false,
+                                                                fare: { "Base Fare": parseInt(catData.aisle.price) || 0, GST: 0, Discount: 0 },
+                                                                label: `Aisle ${catData.aisle.seatNumber}`,
+                                                                available: true,
+                                                                hasStaticFare: true,
+                                                                isDummy: false,
+                                                                type: category === 'premium' ? 'Premium' :
+                                                                    category === 'budget_friendly' ? 'Budget-Friendly' : 'Regular'
+                                                            });
+                                                        }
                                                     }
-
-                                                    if (catData.aisle && catData.aisle.seatNumber) {
-                                                        seats.push({
-                                                            id: catData.aisle.seat_id || `${trip.tripId}-${catData.aisle.seatNumber}-a`,
-                                                            x: 1,
-                                                            y: parseInt(catData.aisle.seatNumber) || 0,
-                                                            seatName: catData.aisle.seatNumber,
-                                                            price: parseInt(catData.aisle.price) || 0,
-                                                            totalFare: parseInt(catData.aisle.price) || 0,
-                                                            isOccupied: false,
-                                                            availabilityStatus: 'A',
-                                                            isReservedForFemales: false,
-                                                            isReservedForMales: false,
-                                                            fare: { "Base Fare": parseInt(catData.aisle.price) || 0, GST: 0, Discount: 0 },
-                                                            label: `Aisle ${catData.aisle.seatNumber}`,
-                                                            available: true,
-                                                            hasStaticFare: true,
-                                                            isDummy: false,
-                                                            type: category === 'premium' ? 'Premium' :
-                                                                category === 'budget_friendly' ? 'Budget-Friendly' : 'Regular'
-                                                        });
+                                                    
+                                                    // Add the processed seats to the bus route
+                                                    busRoute.seats = seats;
+                                                    
+                                                    // Only add routes that have at least one valid seat
+                                                    if (seats.length > 0) {
+                                                        busRoutes.push(busRoute);
+                                                    } else {
+                                                        console.warn(`Bus route ${trip.tripId} has no valid seats, not displaying card`);
                                                     }
-
-                                                    return seats;
-                                                }),
-                                            }));
-
-                                            newAssistantMessage.busRoutes = busRoutes;
+                                                } else {
+                                                    console.warn("Trip missing critical data:", trip);
+                                                }
+                                            }
+                                            
+                                            // Only set busRoutes if we have valid routes
+                                            if (busRoutes.length > 0) {
+                                                newAssistantMessage.busRoutes = busRoutes;
+                                                console.log(`Added ${busRoutes.length} bus route cards to message`);
+                                            } else {
+                                                console.warn("No valid bus routes found in response");
+                                            }
                                         }
 
                                         return {

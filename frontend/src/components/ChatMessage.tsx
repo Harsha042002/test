@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { Message } from '../types';
 import { BusCard } from './Buscard';
 import { toast } from 'react-toastify';
+import { useEffect } from 'react';
 
 interface ChatMessageProps {
   message: Message;
@@ -88,6 +89,12 @@ export function ChatMessage({ message }: ChatMessageProps) {
       console.log("First route dropping points:", droppingPoints);
     }
   }
+
+  useEffect(() => {
+    if (message.busRoutes && message.busRoutes.length > 0) {
+      console.log(`ChatMessage rendering ${message.busRoutes.length} bus routes:`, message.busRoutes);
+    }
+  }, [message.busRoutes]);
 
   return (
     <div className="p-2"> 

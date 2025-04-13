@@ -42,6 +42,28 @@ export const BusCard: React.FC<BusCardProps> = ({
   const [selectedBoardingPoint, setSelectedBoardingPoint] = useState<LocationPoint | null>(null);
   const [selectedDroppingPoint, setSelectedDroppingPoint] = useState<LocationPoint | null>(null);
   
+  // Add this useEffect for debug logging right after the state declarations
+  useEffect(() => {
+    // Log debugging info when the component mounts
+    console.log(`BusCard mounted for route ${id} (${from} to ${to})`);
+    console.log(`This card has ${seats?.length || 0} seats`);
+    
+    // Ensure we have valid boarding points
+    if (!allBoardingPoints || allBoardingPoints.length === 0) {
+      console.warn(`No boarding points provided for bus route ${id}`);
+    }
+    
+    // Ensure we have valid dropping points
+    if (!allDroppingPoints || allDroppingPoints.length === 0) {
+      console.warn(`No dropping points provided for bus route ${id}`);
+    }
+    
+    // Make sure we have seats
+    if (!seats || seats.length === 0) {
+      console.warn(`No seats provided for bus route ${id}`);
+    }
+  }, [id, from, to, seats, allBoardingPoints, allDroppingPoints]);
+
   // Create default boarding/dropping points if none provided
   useEffect(() => {
     // Set default boarding points based on the first boardingPoint in the list

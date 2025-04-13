@@ -1119,6 +1119,48 @@
       "total_cost": 0.0001414,
       "session_id": "c2685d9f-da9c-475d-acf8-436e4e245fad",
       "query_type": "chat"
+    },
+    {
+      "timestamp": "2025-04-12T19:21:11.351059",
+      "date": "2025-04-12",
+      "provider": "gemini",
+      "model": "gemini-2.0-flash",
+      "input_tokens": 365,
+      "output_tokens": 32,
+      "total_tokens": 397,
+      "input_cost": 0.00012775,
+      "output_cost": 1.12e-05,
+      "total_cost": 0.00013895,
+      "session_id": "40d2404b-2f30-4330-a937-cc4f9995fd62",
+      "query_type": "chat"
+    },
+    {
+      "timestamp": "2025-04-12T23:34:57.309684",
+      "date": "2025-04-12",
+      "provider": "gemini",
+      "model": "gemini-2.0-flash",
+      "input_tokens": 365,
+      "output_tokens": 16,
+      "total_tokens": 381,
+      "input_cost": 0.00012775,
+      "output_cost": 5.6e-06,
+      "total_cost": 0.00013335,
+      "session_id": "53e85859-e3ae-48bb-900c-c7688dfdc932",
+      "query_type": "chat"
+    },
+    {
+      "timestamp": "2025-04-13T09:55:51.269233",
+      "date": "2025-04-13",
+      "provider": "gemini",
+      "model": "gemini-2.0-flash",
+      "input_tokens": 365,
+      "output_tokens": 31,
+      "total_tokens": 396,
+      "input_cost": 0.00012775,
+      "output_cost": 1.085e-05,
+      "total_cost": 0.00013859999999999998,
+      "session_id": "91e660be-84c2-492e-bc37-8d9468abef1a",
+      "query_type": "chat"
     }
   ],
   "daily_summaries": {
@@ -1175,15 +1217,28 @@
       }
     },
     "2025-04-12": {
-      "total_requests": 8,
-      "total_tokens": 5973,
-      "total_cost": 0.0020905499999999996,
+      "total_requests": 10,
+      "total_tokens": 6751,
+      "total_cost": 0.0023628499999999997,
       "models": {
         "gemini:gemini-2.0-flash": {
-          "requests": 8,
-          "input_tokens": 5805,
-          "output_tokens": 168,
-          "cost": 0.0020905499999999996
+          "requests": 10,
+          "input_tokens": 6535,
+          "output_tokens": 216,
+          "cost": 0.0023628499999999997
+        }
+      }
+    },
+    "2025-04-13": {
+      "total_requests": 1,
+      "total_tokens": 396,
+      "total_cost": 0.00013859999999999998,
+      "models": {
+        "gemini:gemini-2.0-flash": {
+          "requests": 1,
+          "input_tokens": 365,
+          "output_tokens": 31,
+          "cost": 0.00013859999999999998
         }
       }
     }

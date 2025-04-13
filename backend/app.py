@@ -1769,7 +1769,7 @@ class FreshBusAssistant:
                     
             # For JSON output, fetch all boarding and dropping points
             if return_json:
-                # Fetch all boarding points for this trip
+                # Initialize HTTP session if needed
                 if not self.http_session:
                     await self.init_http_session()
                 
@@ -1805,7 +1805,7 @@ class FreshBusAssistant:
                 except Exception as e:
                     print(f"Error fetching boarding points: {e}")
                 
-                # Fetch dropping points
+                # Fetch dropping points, filtering by destination_id
                 try:
                     dropping_url = f"{self.BASE_URL}/trips/{trip_id}/droppings"
                     print(f"Fetching all dropping points: {dropping_url}")
@@ -1813,11 +1813,16 @@ class FreshBusAssistant:
                     async with self.http_session.get(dropping_url) as response:
                         if response.status == 200:
                             dropping_data = await response.json()
-                            # Format dropping points into a simplified structure
+                            # Format dropping points into a simplified structure, filtering by destination
                             if dropping_data and isinstance(dropping_data, list):
                                 for point in dropping_data:
                                     if point:
                                         dp_info = point.get('droppingPoint', {}) or {}
+                                        
+                                        # Only include dropping points that match the destination_id
+                                        if destination_id and dp_info.get('stationId') != int(destination_id):
+                                            continue
+                                            
                                         formatted_point = {
                                             "name": dp_info.get('name', 'Unknown'),
                                             "landmark": dp_info.get('landmark', ''),
@@ -1828,6 +1833,8 @@ class FreshBusAssistant:
                                             "id": dp_info.get('id', 120)  # Add ID for booking
                                         }
                                         dropping_points.append(formatted_point)
+                                
+                                print(f"Filtered dropping points for destination {destination_id}: {len(dropping_points)} points")
                         else:
                             print(f"Failed to fetch dropping points: Status {response.status}")
                 except Exception as e:
@@ -2721,15 +2728,34 @@ class FreshBusAssistant:
             print(f"Exception fetching boarding points: {e}")
             return []
     
-    async def fetch_dropping_points(self, trip_id):
+    async def fetch_dropping_points(self, trip_id, destination_id=None):
+        """Fetch dropping points for a specific trip, filtered by destination if provided"""
         if not self.http_session:
             await self.init_http_session()
+        
         url = f"{self.BASE_URL}/trips/{trip_id}/droppings"
         print(f"Fetching dropping points: {url}")
+        
         try:
             async with self.http_session.get(url) as response:
                 if response.status == 200:
-                    return await response.json()
+                    all_dropping_points = await response.json()
+                    
+                    # Filter dropping points by destination_id if provided
+                    if destination_id and all_dropping_points:
+                        filtered_dropping_points = [
+                            point for point in all_dropping_points 
+                            if point.get('droppingPoint', {}).get('stationId') == int(destination_id)
+                        ]
+                        
+                        # Only return filtered points if we found some, otherwise return all
+                        if filtered_dropping_points:
+                            print(f"Filtered dropping points for destination {destination_id}: {len(filtered_dropping_points)} points")
+                            return filtered_dropping_points
+                        else:
+                            print(f"No dropping points found for destination {destination_id}, returning all {len(all_dropping_points)} points")
+                    
+                    return all_dropping_points
                 else:
                     print(f"Error fetching dropping points: {response.status}")
                     return []
@@ -3984,8 +4010,8 @@ class FreshBusAssistant:
         
         return " ".join(fallback_parts)
     
-    async def fetch_all_boarding_dropping_points(self, trip_id, source_id, destination_id):
-        """Fetch all boarding and dropping points for a trip"""
+    async def fetch_all_boarding_dropping_points(self, trip_id, source_id, destination_id=None):
+        """Fetch all boarding and dropping points for a trip, filtered by destination"""
         if not self.http_session:
             await self.init_http_session()
         
@@ -4012,7 +4038,8 @@ class FreshBusAssistant:
                             "time": point.get('time', ''),
                             "latitude": bp_info.get('latitude'),
                             "longitude": bp_info.get('longitude'),
-                            "address": bp_info.get('address', '')
+                            "address": bp_info.get('address', ''),
+                            "stationId": bp_info.get('stationId')  # Add station ID for filtering
                         }
                         result["boarding_points"].append(formatted_point)
                 else:
@@ -4020,7 +4047,7 @@ class FreshBusAssistant:
         except Exception as e:
             print(f"Error fetching boarding points: {e}")
         
-        # Fetch dropping points
+        # Fetch dropping points with destination filtering
         try:
             dropping_url = f"{self.BASE_URL}/trips/{trip_id}/droppings"
             print(f"Fetching all dropping points: {dropping_url}")
@@ -4028,18 +4055,28 @@ class FreshBusAssistant:
             async with self.http_session.get(dropping_url) as response:
                 if response.status == 200:
                     dropping_data = await response.json()
+                    
                     # Format dropping points into a simplified structure
                     for point in dropping_data:
                         dp_info = point.get('droppingPoint', {})
+                        
+                        # Only include dropping points that match the destination station ID if provided
+                        if destination_id and dp_info.get('stationId') != int(destination_id):
+                            continue
+                            
                         formatted_point = {
                             "name": dp_info.get('name', 'Unknown'),
                             "landmark": dp_info.get('landmark', ''),
                             "time": point.get('time', ''),
                             "latitude": dp_info.get('latitude'),
                             "longitude": dp_info.get('longitude'),
-                            "address": dp_info.get('address', '')
+                            "address": dp_info.get('address', ''),
+                            "stationId": dp_info.get('stationId')  # Add station ID for filtering
                         }
                         result["dropping_points"].append(formatted_point)
+                    
+                    if destination_id:
+                        print(f"Filtered dropping points for destination {destination_id}: {len(result['dropping_points'])} points")
                 else:
                     print(f"Failed to fetch dropping points: Status {response.status}")
         except Exception as e:
@@ -4459,8 +4496,17 @@ class FreshBusAssistant:
                         
                         # Only fetch if not already in context
                         if looking_for_dropping and not api_data.get("dropping_points"):
-                            dropping_points = await self.fetch_dropping_points(trip_id)
+                            # Get destination ID from the stations dictionary based on the user's requested destination
+                            dest_id = None
+                            if destination_id:
+                                dest_id = destination_id
+                            elif context.get('user_requested_destination'):
+                                dest_id = self.stations.get(context['user_requested_destination'].lower())
+                                print(f"Using destination ID {dest_id} from user's requested destination: {context['user_requested_destination']}")
+                            
+                            dropping_points = await self.fetch_dropping_points(trip_id, dest_id)
                             if dropping_points:
+                                print(f"Fetched {len(dropping_points)} dropping points for destination ID {dest_id}")
                                 api_data["dropping_points"] = dropping_points
                                 
                                 # Suggest a dropping point
@@ -4566,8 +4612,7 @@ class FreshBusAssistant:
                     
                 conversation_id = conversation_manager.save_conversation(
                     session_id, 
-                    session['messages'], 
-                    user_id=user_id
+                    session['messages']
                 )
                 print(f"Saved direct trip ended response to Redis: {conversation_id}, user: {user_id}")
             except Exception as redis_err:
@@ -4617,8 +4662,7 @@ class FreshBusAssistant:
                     
                 conversation_id = conversation_manager.save_conversation(
                     session_id, 
-                    session['messages'], 
-                    user_id=user_id
+                    session['messages']
                 )
                 print(f"Saved invalid route response to Redis: {conversation_id}, user: {user_id}")
             except Exception as redis_err:
@@ -4663,8 +4707,7 @@ class FreshBusAssistant:
                     
                 conversation_id = conversation_manager.save_conversation(
                     session_id, 
-                    session['messages'], 
-                    user_id=user_id
+                    session['messages']
                 )
                 print(f"Saved direct response to Redis: {conversation_id}, user: {user_id}")
             except Exception as redis_err:
@@ -4962,8 +5005,7 @@ class FreshBusAssistant:
                                 
                             conversation_id = conversation_manager.save_conversation(
                                 session_id, 
-                                session['messages'], 
-                                user_id=redis_user_id
+                                session['messages']
                             )
                             if conversation_id:
                                 print(f"Saved conversation to Redis with ID: {conversation_id}, user: {redis_user_id}")
@@ -5025,8 +5067,7 @@ class FreshBusAssistant:
                             
                     conversation_id = conversation_manager.save_conversation(
                         session_id, 
-                        session['messages'], 
-                        user_id=redis_user_id
+                        session['messages']
                     )
                     if conversation_id:
                         print(f"Saved direct response to Redis: {conversation_id}, user: {redis_user_id}")
@@ -5077,8 +5118,7 @@ class FreshBusAssistant:
                             
                     conversation_id = conversation_manager.save_conversation(
                         session_id, 
-                        session['messages'], 
-                        user_id=redis_user_id
+                        session['messages']
                     )
                     if conversation_id:
                         print(f"Saved simple response to Redis: {conversation_id}, user: {redis_user_id}")
@@ -5136,8 +5176,7 @@ class FreshBusAssistant:
                             
                     conversation_id = conversation_manager.save_conversation(
                         session_id, 
-                        session['messages'], 
-                        user_id=redis_user_id
+                        session['messages']
                     )
                     if conversation_id:
                         print(f"Saved fallback conversation to Redis: {conversation_id}, user: {redis_user_id}")
