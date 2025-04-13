@@ -1,5 +1,4 @@
 // In types.ts
-// In types.ts
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -16,7 +15,6 @@ export interface Chat {
   lastUpdated: Date;
 }
 
-
 export interface Seat {
   id: number | string;
   x: number;
@@ -29,8 +27,8 @@ export interface Seat {
   isReservedForMales: boolean;
   fare: {
     "Base Fare": number;
-    GST: number;
-    Discount: number;
+    "GST": number;
+    "Discount": number;
   };
   label: string;
   available: boolean;
@@ -48,7 +46,36 @@ export interface BusRoute {
   duration: string;
   startTime: string;
   endTime: string;
-  boardingPoints: string[];
-  droppingPoints: string[];
+  boardingPoints: (string | LocationPoint)[];
+  droppingPoints: (string | LocationPoint)[];
   seats: Seat[];
+  // Add the bookingInfo property
+  bookingInfo?: {
+    mobile: string;
+    email: string;
+    seat_map: Array<{
+      passenger_age: number;
+      seat_id: number | string;
+      passenger_name: string;
+      gender: string;
+    }>;
+    trip_id: number;
+    boarding_point_id: number | string;
+    dropping_point_id: number | string;
+    boarding_point_time: string;
+    dropping_point_time: string;
+    total_collect_amount: number;
+    main_category: number;
+    freshcardId: number;
+    freshcard: boolean;
+    return_url: string;
+  };
+}
+
+export interface LocationPoint {
+  id: number | string;
+  name: string;
+  landmark?: string;
+  time?: string;
+  address?: string;
 }

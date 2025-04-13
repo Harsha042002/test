@@ -80,9 +80,25 @@ function Layout() {
     const [chats, setChats] = useState<Chat[]>(mockChats);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const isAuthenticated = useAuth();
-    const [showLogout, setShowLogout] = useState(false); // State to toggle logout button
-    console.log('Authentication state:', isAuthenticated); // Debugging log
+    const [showLogout, setShowLogout] = useState(false);
+    
+    // Add booking state and handler
+    const [isBookingLoading, setIsBookingLoading] = useState(false);
+    
+    const handleBookingProcess = useCallback(async (callback: () => Promise<any>) => {
+        setIsBookingLoading(true);
+        try {
+            await callback();
+            toast.success('Booking successful!');
+        } catch (error: any) {
+            console.error('Booking error:', error);
+            toast.error(error.message || 'An error occurred during booking');
+        } finally {
+            setIsBookingLoading(false);
+        }
+    }, []);
 
+    // Keep existing handlers
     const toggleSidebar = useCallback(() => {
         setIsSidebarOpen(prev => !prev);
     }, []);
@@ -185,6 +201,7 @@ function Layout() {
                                     prevChats.map(chat => {
                                         if (chat.id !== selectedChatId) return chat;
 
+                                        // Create the base message object
                                         const newAssistantMessage: Message = {
                                             id: assistantMessageId,
                                             role: 'assistant',
@@ -192,44 +209,22 @@ function Layout() {
                                             timestamp: new Date(),
                                         };
 
+                                        // Process JSON data into bus routes if available
                                         if (jsonData && jsonData.trips) {
                                             // Store the raw JSON data for access to boarding/dropping points
                                             newAssistantMessage.rawData = jsonData;
                                             
-                                            // Create busRoutes only if we have valid trips with the required data
+                                            // Create busRoutes from the JSON data - FIXED VERSION
                                             const busRoutes: BusRoute[] = [];
                                             
+                                            console.log("Processing trips for bus routes:", jsonData.trips.length);
+                                            
                                             for (const trip of jsonData.trips) {
-                                                // Check if trip has the critical information needed
+                                                // Check if trip has the required data
                                                 if (trip.tripId && trip.from && trip.to && trip.recommendations) {
-                                                    // Create consistent boarding/dropping points array structure
-                                                    if (!trip.all_boarding_points) {
-                                                        trip.all_boarding_points = [{
-                                                            id: `${trip.tripId}-boarding-default`,
-                                                            name: trip.boardingPoint || "Main Boarding Point",
-                                                            landmark: 'Main Stop',
-                                                            time: trip.departureTime
-                                                        }];
-                                                    }
+                                                    console.log(`Processing trip ${trip.tripId}`);
                                                     
-                                                    if (!trip.all_dropping_points) {
-                                                        trip.all_dropping_points = [{
-                                                            id: `${trip.tripId}-dropping-default`,
-                                                            name: trip.droppingPoint || "Main Dropping Point",
-                                                            landmark: 'Main Stop',
-                                                            time: trip.arrivalTime
-                                                        }];
-                                                    }
-                                                    
-                                                    // Ensure we have at least empty arrays for recommendations if missing
-                                                    const categories = ['reasonable', 'premium', 'budget_friendly'];
-                                                    for (const category of categories) {
-                                                        if (!trip.recommendations[category]) {
-                                                            trip.recommendations[category] = {};
-                                                        }
-                                                    }
-                                                    
-                                                    // Create the bus route object with all data we need
+                                                    // Create BusRoute object
                                                     const busRoute: BusRoute = {
                                                         id: trip.tripId,
                                                         from: trip.from,
@@ -295,12 +290,15 @@ function Layout() {
                                                         }
                                                     }
                                                     
+                                                    console.log(`Created ${seats.length} seats for trip ${trip.tripId}`);
+                                                    
                                                     // Add the processed seats to the bus route
                                                     busRoute.seats = seats;
                                                     
                                                     // Only add routes that have at least one valid seat
                                                     if (seats.length > 0) {
                                                         busRoutes.push(busRoute);
+                                                        console.log(`Added bus route ${trip.tripId} with ${seats.length} seats`);
                                                     } else {
                                                         console.warn(`Bus route ${trip.tripId} has no valid seats, not displaying card`);
                                                     }
@@ -309,10 +307,10 @@ function Layout() {
                                                 }
                                             }
                                             
-                                            // Only set busRoutes if we have valid routes
+                                            // CRITICAL: Set busRoutes on the message - this is key!
                                             if (busRoutes.length > 0) {
                                                 newAssistantMessage.busRoutes = busRoutes;
-                                                console.log(`Added ${busRoutes.length} bus route cards to message`);
+                                                console.log(`Added ${busRoutes.length} bus route cards to message:`, busRoutes);
                                             } else {
                                                 console.warn("No valid bus routes found in response");
                                             }
@@ -434,6 +432,23 @@ function Layout() {
       }
   }, []);
 
+    // Add new useEffect for booking handler
+    useEffect(() => {
+        const bookingHandler = () => {
+            if (isAuthenticated && !isBookingLoading) {
+                console.log('Booking handler is set up');
+                // Example usage:
+                // handleBookingProcess(async () => {
+                //     await new Promise(resolve => setTimeout(resolve, 1000));
+                //     return { success: true };
+                // });
+            }
+        };
+        
+        bookingHandler();
+    }, [isAuthenticated, isBookingLoading, handleBookingProcess]);
+
+    // Keep existing scroll effect
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [selectedChatId, chats]);

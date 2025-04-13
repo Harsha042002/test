@@ -1161,6 +1161,76 @@
       "total_cost": 0.00013859999999999998,
       "session_id": "91e660be-84c2-492e-bc37-8d9468abef1a",
       "query_type": "chat"
+    },
+    {
+      "timestamp": "2025-04-13T13:42:53.468219",
+      "date": "2025-04-13",
+      "provider": "gemini",
+      "model": "gemini-2.0-flash",
+      "input_tokens": 365,
+      "output_tokens": 16,
+      "total_tokens": 381,
+      "input_cost": 0.00012775,
+      "output_cost": 5.6e-06,
+      "total_cost": 0.00013335,
+      "session_id": "14ef2783-8d52-4c23-ae98-8a30832da9b1",
+      "query_type": "chat"
+    },
+    {
+      "timestamp": "2025-04-13T13:54:46.535443",
+      "date": "2025-04-13",
+      "provider": "gemini",
+      "model": "gemini-2.0-flash",
+      "input_tokens": 365,
+      "output_tokens": 32,
+      "total_tokens": 397,
+      "input_cost": 0.00012775,
+      "output_cost": 1.12e-05,
+      "total_cost": 0.00013895,
+      "session_id": "a68b3138-201b-40be-bbfe-ac2513a5bdbc",
+      "query_type": "chat"
+    },
+    {
+      "timestamp": "2025-04-13T16:48:12.542742",
+      "date": "2025-04-13",
+      "provider": "gemini",
+      "model": "gemini-2.0-flash",
+      "input_tokens": 365,
+      "output_tokens": 32,
+      "total_tokens": 397,
+      "input_cost": 0.00012775,
+      "output_cost": 1.12e-05,
+      "total_cost": 0.00013895,
+      "session_id": "b96f3a9c-1b9c-437e-876a-4ef734dd3679",
+      "query_type": "chat"
+    },
+    {
+      "timestamp": "2025-04-13T17:14:30.284888",
+      "date": "2025-04-13",
+      "provider": "gemini",
+      "model": "gemini-2.0-flash",
+      "input_tokens": 365,
+      "output_tokens": 16,
+      "total_tokens": 381,
+      "input_cost": 0.00012775,
+      "output_cost": 5.6e-06,
+      "total_cost": 0.00013335,
+      "session_id": "d04e0b7c-c226-42b8-b805-8ab85ab17480",
+      "query_type": "chat"
+    },
+    {
+      "timestamp": "2025-04-13T19:34:43.245207",
+      "date": "2025-04-13",
+      "provider": "gemini",
+      "model": "gemini-2.0-flash",
+      "input_tokens": 365,
+      "output_tokens": 17,
+      "total_tokens": 382,
+      "input_cost": 0.00012775,
+      "output_cost": 5.950000000000001e-06,
+      "total_cost": 0.0001337,
+      "session_id": "1f8e5d7a-d725-4415-971b-6091aacea988",
+      "query_type": "chat"
     }
   ],
   "daily_summaries": {
@@ -1230,15 +1300,15 @@
       }
     },
     "2025-04-13": {
-      "total_requests": 1,
-      "total_tokens": 396,
-      "total_cost": 0.00013859999999999998,
+      "total_requests": 6,
+      "total_tokens": 2334,
+      "total_cost": 0.0008169,
       "models": {
         "gemini:gemini-2.0-flash": {
-          "requests": 1,
-          "input_tokens": 365,
-          "output_tokens": 31,
-          "cost": 0.00013859999999999998
+          "requests": 6,
+          "input_tokens": 2190,
+          "output_tokens": 144,
+          "cost": 0.0008169
         }
       }
     }

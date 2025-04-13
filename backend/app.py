@@ -5268,9 +5268,9 @@ async def get_current_model():
         )
     })
 
-@app.post("/book-ticket")
-async def book_ticket(request: Request):
-    """Book a ticket with passenger details"""
+@app.post("/tickets/block")
+async def block_ticket(request: Request):
+    """Block a ticket with passenger details and return payment URL"""
     try:
         # Get the request body
         booking_data = await request.json()
@@ -5325,7 +5325,7 @@ async def book_ticket(request: Request):
             "Content-Type": "application/json"
         }
         
-        print(f"Sending booking request to {booking_url} with payload: {booking_payload}")
+        print(f"Sending ticket block request to {booking_url} with payload: {booking_payload}")
         
         async with fresh_bus_assistant.http_session.post(
             booking_url, 
@@ -5335,27 +5335,27 @@ async def book_ticket(request: Request):
             response_data = await response.json()
             
             if response.status == 200:
-                # Booking successful
+                # Ticket blocking successful
                 return JSONResponse(
                     content={
                         "success": True,
-                        "message": "Ticket booked successfully",
-                        "booking_details": response_data
+                        "message": "Ticket blocked successfully",
+                        "payment_details": response_data
                     }
                 )
             else:
-                # Booking failed
+                # Ticket blocking failed
                 error_message = response_data.get("message", "Unknown error")
                 return JSONResponse(
                     status_code=response.status,
-                    content={"success": False, "message": f"Booking failed: {error_message}"}
+                    content={"success": False, "message": f"Ticket blocking failed: {error_message}"}
                 )
                 
     except Exception as e:
-        print(f"Error booking ticket: {e}")
+        print(f"Error blocking ticket: {e}")
         return JSONResponse(
             status_code=500,
-            content={"success": False, "message": f"Error booking ticket: {str(e)}"}
+            content={"success": False, "message": f"Error blocking ticket: {str(e)}"}
         )
     
 
