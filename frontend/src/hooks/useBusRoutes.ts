@@ -5,38 +5,45 @@ export function useBusRoutes(message: Message): BusRoute[] | null {
   const [busRoutes, setBusRoutes] = useState<BusRoute[] | null>(null);
   
   useEffect(() => {
-    // If message already has busRoutes, use those.
+    // If the message already has busRoutes, use them.
     if (message.busRoutes && message.busRoutes.length > 0) {
       console.log("Using existing bus routes:", message.busRoutes.length);
       setBusRoutes(message.busRoutes);
       return;
     }
     
-    // Try to extract JSON from message content.
+    // Check if message content has a JSON block.
     if (message.content && message.content.includes('```json')) {
       try {
         console.log("Attempting to extract JSON from message content");
-        // Extract the JSON part from the message content.
-        const jsonStr = message.content.split('```json')[1].split('```')[0];
+        // Use a regex to capture everything between the triple backticks
+        const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
+        const match = message.content.match(jsonRegex);
+        if (!match || !match[1]) {
+          console.error("No JSON block found in message content");
+          return;
+        }
+        
+        const jsonStr = match[1];
         const jsonData = JSON.parse(jsonStr.trim());
         console.log("Extracted JSON data:", jsonData);
         
         if (jsonData && jsonData.trips && Array.isArray(jsonData.trips)) {
-          // Inline helper function: transform a seat object to preserve all fields including "fare"
+          // Helper function: transform a seat object so that its nested "fare" info is preserved.
           const transformSeat = (seat: any): Seat => ({
             ...seat,
-            fare: seat.fare || {}  // Ensure the fare field is preserved, or default to an empty object.
+            fare: seat.fare || {}  // Preserve fare field
           });
           
           const extractedRoutes: BusRoute[] = jsonData.trips.map((trip: any) => {
             const seats: Seat[] = [];
             
-            // If recommendations exist, process seats from them.
             if (trip.recommendations) {
+              // Process each recommendation category
               for (const category in trip.recommendations) {
                 const catData = trip.recommendations[category];
                 
-                // Process window seat if available.
+                // Process window seat if available
                 if (catData.window && catData.window.seatNumber) {
                   seats.push({
                     id: catData.window.seat_id || `${trip.tripId}-${catData.window.seatNumber}-w`,
@@ -62,7 +69,7 @@ export function useBusRoutes(message: Message): BusRoute[] | null {
                   });
                 }
                 
-                // Process aisle seat if available.
+                // Process aisle seat if available
                 if (catData.aisle && catData.aisle.seatNumber) {
                   seats.push({
                     id: catData.aisle.seat_id || `${trip.tripId}-${catData.aisle.seatNumber}-a`,
@@ -90,6 +97,7 @@ export function useBusRoutes(message: Message): BusRoute[] | null {
               }
             }
             
+            // Build the BusRoute object using the seats extracted from recommendations.
             const busRoute: BusRoute = {
               id: trip.tripId,
               from: trip.from || 'Unknown',
@@ -103,15 +111,14 @@ export function useBusRoutes(message: Message): BusRoute[] | null {
               seats: seats
             };
             
-            // Override boarding/dropping points if provided in full arrays.
+            // Override with full boarding/dropping arrays if available.
             if (trip.all_boarding_points) {
               busRoute.boardingPoints = trip.all_boarding_points;
             }
             if (trip.all_dropping_points) {
               busRoute.droppingPoints = trip.all_dropping_points;
             }
-            
-            // Attach booking info if available.
+            // Attach booking info if provided.
             if (trip.booking_info) {
               busRoute.bookingInfo = trip.booking_info;
             }

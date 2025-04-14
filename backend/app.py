@@ -5271,6 +5271,10 @@ async def get_current_model():
         )
     })
 
+import json  # Add this import if not already present
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
 @app.post("/tickets/block")
 async def block_ticket(request: Request):
     """Block a ticket with passenger details and return payment URL"""
@@ -5280,7 +5284,7 @@ async def block_ticket(request: Request):
         
         # Check if all required fields are present
         required_fields = ["mobile", "email", "trip_id", "boarding_point_id", 
-                          "dropping_point_id", "seat_map"]
+                           "dropping_point_id", "seat_map"]
         
         for field in required_fields:
             if field not in booking_data:
@@ -5303,7 +5307,7 @@ async def block_ticket(request: Request):
         if not fresh_bus_assistant.http_session:
             await fresh_bus_assistant.init_http_session()
         
-        # Prepare the booking request
+        # Prepare the booking request payload
         booking_payload = {
             "mobile": booking_data["mobile"],
             "email": booking_data["email"],
@@ -5343,10 +5347,10 @@ async def block_ticket(request: Request):
         ) as response:
             response_data = await response.json()
             print("Ticket block response:")
-            print(json.dumps(response_data, indent=2))
+            print(json.dumps(response_data, indent=2))  # This prints the JSON response in the terminal
             
-            if response.status == 200:
-                # Ticket blocking successful
+            # Accept both 200 and 201 status codes as successful responses
+            if response.status in [200, 201]:
                 return JSONResponse(
                     content={
                         "success": True,
@@ -5355,7 +5359,6 @@ async def block_ticket(request: Request):
                     }
                 )
             else:
-                # Ticket blocking failed
                 error_message = response_data.get("message", "Unknown error")
                 return JSONResponse(
                     status_code=response.status,
