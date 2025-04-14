@@ -1590,7 +1590,8 @@ class FreshBusAssistant:
                                             available_seats.append({
                                                 'number': seat_number,
                                                 'price': seat.get('totalFare', 0),
-                                                'seat_id': seat.get('id', 0)
+                                                'seat_id': seat.get('id', 0),
+                                                'fare': seat.get('fare', {})
                                             })
                                         except (ValueError, TypeError):
                                             # Skip invalid seat numbers
@@ -1755,7 +1756,8 @@ class FreshBusAssistant:
                     json_bus["recommendations"][category_key]["window"] = {
                         "seatNumber": str(window_seat.get("number", "")),
                         "price": str(window_seat.get("price", "")),
-                        "seat_id": str(window_seat.get("seat_id", 0))
+                        "seat_id": str(window_seat.get("seat_id", 0)),
+                        "fare": window_seat.get("fare", {})
                     }
                 
                 # Add aisle seat if available
@@ -1764,7 +1766,8 @@ class FreshBusAssistant:
                     json_bus["recommendations"][category_key]["aisle"] = {
                         "seatNumber": str(aisle_seat.get("number", "")),
                         "price": str(aisle_seat.get("price", "")),
-                        "seat_id": str(aisle_seat.get("seat_id", 0))
+                        "seat_id": str(aisle_seat.get("seat_id", 0)),
+                        "fare": aisle_seat.get("fare", {})
                     }
                     
             # For JSON output, fetch all boarding and dropping points
@@ -5317,6 +5320,12 @@ async def block_ticket(request: Request):
             "return_url": booking_data.get("return_url", "https://freshbus.com/booking-confirmation")
         }
         
+        # Forward fare details if provided (using original structure)
+        if "fare" in booking_data:
+            booking_payload["fare"] = booking_data["fare"]
+        
+        print(f"Sending ticket block request to Fresh Bus API with payload: {booking_payload}")
+        
         # Make the booking API call to the correct endpoint
         booking_url = f"{fresh_bus_assistant.BASE_URL_CUSTOMER}/tickets/block"
         
@@ -5325,7 +5334,7 @@ async def block_ticket(request: Request):
             "Content-Type": "application/json"
         }
         
-        print(f"Sending ticket block request to {booking_url} with payload: {booking_payload}")
+        print(f"Sending ticket block request to {booking_url}")
         
         async with fresh_bus_assistant.http_session.post(
             booking_url, 
@@ -5333,6 +5342,8 @@ async def block_ticket(request: Request):
             headers=headers
         ) as response:
             response_data = await response.json()
+            print("Ticket block response:")
+            print(json.dumps(response_data, indent=2))
             
             if response.status == 200:
                 # Ticket blocking successful
@@ -5356,8 +5367,7 @@ async def block_ticket(request: Request):
         return JSONResponse(
             status_code=500,
             content={"success": False, "message": f"Error blocking ticket: {str(e)}"}
-        )
-    
+        )    
 
 @app.route("/profile", methods=["GET"])
 async def get_user_profile(request: Request):
@@ -5385,6 +5395,25 @@ async def get_user_profile(request: Request):
                 # Cache the user profile in Redis for faster access
                 user_id = str(profile_data['id'])
                 
+                # Print user login details in terminal
+                print("\n=== User Login Details ===")
+                print(f"User ID: {user_id}")
+                print(f"Name: {profile_data.get('name', 'N/A')}")
+                print(f"Email: {profile_data.get('email', 'N/A')}")
+                print(f"Mobile: {profile_data.get('mobile', 'N/A')}")
+                print(f"Gender: {profile_data.get('gender', 'N/A')}")
+                
+                # Print additional details if available
+                if profile_data.get('address'):
+                    print(f"Address: {profile_data['address']}")
+                if profile_data.get('preferredLanguage'):
+                    print(f"Preferred Language: {profile_data['preferredLanguage']}")
+                if profile_data.get('availableCoins'):
+                    print(f"Available Coins: {profile_data['availableCoins']}")
+                    
+                print("Login Time:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                print("=" * 25)
+                
                 # Store in Redis conversation manager
                 conversation_manager.update_user_profile(user_id, profile_data)
                 
@@ -5395,11 +5424,17 @@ async def get_user_profile(request: Request):
                 return JSONResponse(content=profile_data)
             else:
                 error_text = await response.text()
+                print("\n=== Login Failed ===")
+                print(f"Error: {error_text}")
+                print("=" * 25)
                 return JSONResponse(
                     status_code=response.status,
                     content={"error": f"Failed to fetch profile: {error_text}"}
                 )
     except Exception as e:
+        print("\n=== Login Error ===")
+        print(f"Error: {str(e)}")
+        print("=" * 25)
         return JSONResponse(
             status_code=500,
             content={"error": f"Error fetching profile: {str(e)}"}

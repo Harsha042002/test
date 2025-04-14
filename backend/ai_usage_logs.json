@@ -1231,6 +1231,118 @@
       "total_cost": 0.0001337,
       "session_id": "1f8e5d7a-d725-4415-971b-6091aacea988",
       "query_type": "chat"
+    },
+    {
+      "timestamp": "2025-04-14T08:51:37.223804",
+      "date": "2025-04-14",
+      "provider": "gemini",
+      "model": "gemini-2.0-flash",
+      "input_tokens": 365,
+      "output_tokens": 16,
+      "total_tokens": 381,
+      "input_cost": 0.00012775,
+      "output_cost": 5.6e-06,
+      "total_cost": 0.00013335,
+      "session_id": "2ea19492-e25f-4c30-9370-d69aa4ed992e",
+      "query_type": "chat"
+    },
+    {
+      "timestamp": "2025-04-14T09:05:54.675392",
+      "date": "2025-04-14",
+      "provider": "gemini",
+      "model": "gemini-2.0-flash",
+      "input_tokens": 365,
+      "output_tokens": 16,
+      "total_tokens": 381,
+      "input_cost": 0.00012775,
+      "output_cost": 5.6e-06,
+      "total_cost": 0.00013335,
+      "session_id": "4759299f-c76f-47ff-8919-dd6f269b2bf2",
+      "query_type": "chat"
+    },
+    {
+      "timestamp": "2025-04-14T11:04:50.668933",
+      "date": "2025-04-14",
+      "provider": "gemini",
+      "model": "gemini-2.0-flash",
+      "input_tokens": 365,
+      "output_tokens": 17,
+      "total_tokens": 382,
+      "input_cost": 0.00012775,
+      "output_cost": 5.950000000000001e-06,
+      "total_cost": 0.0001337,
+      "session_id": "fb056fb2-c2ae-40e4-a3b8-1dfab57353b2",
+      "query_type": "chat"
+    },
+    {
+      "timestamp": "2025-04-14T11:56:25.118759",
+      "date": "2025-04-14",
+      "provider": "gemini",
+      "model": "gemini-2.0-flash",
+      "input_tokens": 365,
+      "output_tokens": 16,
+      "total_tokens": 381,
+      "input_cost": 0.00012775,
+      "output_cost": 5.6e-06,
+      "total_cost": 0.00013335,
+      "session_id": "8bb6042e-8aa4-43cd-94ee-5d3000472194",
+      "query_type": "chat"
+    },
+    {
+      "timestamp": "2025-04-14T15:02:47.420473",
+      "date": "2025-04-14",
+      "provider": "gemini",
+      "model": "gemini-2.0-flash",
+      "input_tokens": 313,
+      "output_tokens": 44,
+      "total_tokens": 357,
+      "input_cost": 0.00010954999999999999,
+      "output_cost": 1.5399999999999998e-05,
+      "total_cost": 0.00012495,
+      "session_id": "c0a47ab5-e504-470f-b5bc-50000df4c634",
+      "query_type": "chat"
+    },
+    {
+      "timestamp": "2025-04-14T15:03:36.275116",
+      "date": "2025-04-14",
+      "provider": "gemini",
+      "model": "gemini-2.0-flash",
+      "input_tokens": 365,
+      "output_tokens": 32,
+      "total_tokens": 397,
+      "input_cost": 0.00012775,
+      "output_cost": 1.12e-05,
+      "total_cost": 0.00013895,
+      "session_id": "9f863868-500f-4ec1-a71f-2dca22b99eca",
+      "query_type": "chat"
+    },
+    {
+      "timestamp": "2025-04-14T15:31:09.991874",
+      "date": "2025-04-14",
+      "provider": "gemini",
+      "model": "gemini-2.0-flash",
+      "input_tokens": 191,
+      "output_tokens": 14,
+      "total_tokens": 205,
+      "input_cost": 6.685e-05,
+      "output_cost": 4.9e-06,
+      "total_cost": 7.175e-05,
+      "session_id": "daa5740f-995f-4b0f-ae53-d4069ae1d6ec",
+      "query_type": "chat"
+    },
+    {
+      "timestamp": "2025-04-14T15:31:37.190277",
+      "date": "2025-04-14",
+      "provider": "gemini",
+      "model": "gemini-2.0-flash",
+      "input_tokens": 231,
+      "output_tokens": 14,
+      "total_tokens": 245,
+      "input_cost": 8.085e-05,
+      "output_cost": 4.9e-06,
+      "total_cost": 8.575e-05,
+      "session_id": "20754492-6f23-47aa-bf9d-36f3b1ef8725",
+      "query_type": "chat"
     }
   ],
   "daily_summaries": {
@@ -1309,6 +1421,19 @@
           "input_tokens": 2190,
           "output_tokens": 144,
           "cost": 0.0008169
+        }
+      }
+    },
+    "2025-04-14": {
+      "total_requests": 8,
+      "total_tokens": 2729,
+      "total_cost": 0.0009551499999999999,
+      "models": {
+        "gemini:gemini-2.0-flash": {
+          "requests": 8,
+          "input_tokens": 2560,
+          "output_tokens": 169,
+          "cost": 0.0009551499999999999
         }
       }
     }
