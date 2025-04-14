@@ -1,17 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Bus, Check, ChevronDown, Loader2, Clock, User, Phone, Mail, Star } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { BusRoute, Seat } from '../types';
-
-interface LocationPoint {
-  id: string | number;
-  name: string;
-  landmark?: string;
-  time?: string;
-  latitude?: number;
-  longitude?: number;
-  address?: string;
-}
+import { BusRoute, Seat, LocationPoint, FareDetails } from '../types';
 
 interface UserProfile {
   mobile: string;
@@ -51,7 +41,6 @@ export function BusCard({
   const [confirmStep, setConfirmStep] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
-  const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
 
   // Get formatted boarding and dropping points for display
   useEffect(() => {
@@ -78,27 +67,49 @@ export function BusCard({
 
   // Calculate total fare including GST and discounts
   const calculateTotalFare = (seat: Seat): number => {
-    // If the seat has a fare breakdown, calculate total from components
+    console.log(`Calculating fare for seat ${seat.id || seat.seat_id}:`);
+    
+    // First try to find fare details from various possible places in the data structure
+    let fareDetails: FareDetails | null = null;
+    
     if (seat.fare) {
-      const baseFare = parseFloat((seat.fare["Base Fare"] || 0).toFixed(2));
-      const gst = parseFloat((seat.fare["GST"] || 0).toFixed(2));
-      const discount = parseFloat((seat.fare["Discount"] || 0).toFixed(2));
+      fareDetails = seat.fare;
+    } 
+    else if (seat.window && seat.window.fare) {
+      fareDetails = seat.window.fare;
+    } 
+    else if (seat.aisle && seat.aisle.fare) {
+      fareDetails = seat.aisle.fare;
+    }
+    
+    // If we found fare details, use them to calculate total
+    if (fareDetails) {
+      const baseFare = fareDetails["Base Fare"] || 0;
+      const gst = fareDetails["GST"] || 0;
+      const discount = fareDetails["Discount"] || 0;
       
-      // Calculate total with proper decimal precision
-      const total = parseFloat((baseFare + gst + discount).toFixed(2));
+      console.log(`- Base fare: ${baseFare}`);
+      console.log(`- GST: ${gst}`);
+      console.log(`- Discount: ${discount}`);
+      
+      const total = baseFare + gst + discount;
+      console.log(`- Sum of components: ${total}`);
       return total;
     }
     
-    // If totalFare is available, use that
+    // Fallbacks if no fare details found
     if (seat.totalFare !== undefined) {
-      return parseFloat(seat.totalFare.toFixed(2));
+      console.log(`- Using provided totalFare as fallback: ${seat.totalFare}`);
+      return seat.totalFare;
     }
     
-    // Fallback to price if available
     if (seat.price !== undefined) {
-      return parseFloat(seat.price.toFixed(2));
+      const price = typeof seat.price === 'string' ? parseFloat(seat.price) : seat.price;
+      console.log(`- Using price as fallback: ${price}`);
+      return price;
     }
     
+    console.log(`- No fare information available, defaulting to 0`);
     return 0;
   };
 
@@ -131,127 +142,151 @@ export function BusCard({
       setBookingError("Please select seat, boarding point, and dropping point");
       return;
     }
-    
+  
     setIsProcessing(true);
     setBookingError(null);
-    
+  
     try {
-      // Calculate total fare with detailed logging
-      const totalFare = calculateTotalFare(selectedSeat);
+      // Get auth token from localStorage
+      const authToken = localStorage.getItem('auth_token');
+      if (!authToken) {
+        throw new Error('Authentication required');
+      }
+  
+      // Extract exact fare components from the seat data
+      // Reference the original fare data structure
+      let fareDetails: FareDetails = { "Base Fare": 0, "GST": 0, "Discount": 0 };
       
-      // Log fare calculation details
-      console.log(`Calculating fare for seat ${selectedSeat.id}:`);
-      console.log(`- Total fare from seat object: ${selectedSeat.totalFare}`);
-      console.log(`- Base fare: ${selectedSeat.fare?.["Base Fare"] || 0}`);
-      console.log(`- GST: ${selectedSeat.fare?.["GST"] || 0}`);
-      console.log(`- Discount: ${selectedSeat.fare?.["Discount"] || 0}`);
-      console.log(`- Calculated total: ${totalFare}`);
-
+      // First priority: Get fare from the direct fare property on the seat
+      if (selectedSeat.fare) {
+        fareDetails = selectedSeat.fare;
+      } 
+      // Second priority: Try to get from window/aisle properties
+      else if (selectedSeat.window && selectedSeat.window.fare) {
+        fareDetails = selectedSeat.window.fare;
+      } 
+      else if (selectedSeat.aisle && selectedSeat.aisle.fare) {
+        fareDetails = selectedSeat.aisle.fare;
+      }
+      // Otherwise, construct a basic fare object from price
+      else if (selectedSeat.price) {
+        const price = typeof selectedSeat.price === 'string' ? parseFloat(selectedSeat.price) : selectedSeat.price;
+        fareDetails = {
+          "Base Fare": price,
+          "GST": 0,
+          "Discount": 0
+        };
+      }
+      
+      // Calculate the exact fare
+      const baseFare = fareDetails["Base Fare"] || 0;
+      const gst = fareDetails["GST"] || 0;
+      const discount = fareDetails["Discount"] || 0;
+      const exactFare = baseFare + gst + discount;
+      
+      // Log the exact fare details for debugging
+      console.log("Using exact fare components from API:");
+      console.log(`- Base fare: ${baseFare}`);
+      console.log(`- GST: ${gst}`);
+      console.log(`- Discount: ${discount}`);
+      console.log(`- Total: ${exactFare}`);
+  
       // Create tomorrow's date for the boarding/dropping times
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setUTCHours(0, 0, 0, 0);
-
-      // Add boarding time (23:20:00)
+      
+      // Set boarding time (using the startTime prop)
       const boardingTime = new Date(tomorrow);
-      boardingTime.setUTCHours(17, 50, 0, 0); // 23:20 IST = 17:50 UTC
-
-      // Add dropping time (07:30:00 next day)
+      const [boardingHours, boardingMinutes] = startTime.split(':').map(part => parseInt(part));
+      boardingTime.setHours(boardingHours, boardingMinutes, 0, 0);
+      
+      // Set dropping time (using the endTime prop)
       const droppingTime = new Date(tomorrow);
-      droppingTime.setDate(droppingTime.getDate() + 1);
-      droppingTime.setUTCHours(2, 0, 0, 0); // 07:30 IST = 02:00 UTC
-
+      const [droppingHours, droppingMinutes] = endTime.split(':').map(part => parseInt(part));
+      droppingTime.setHours(droppingHours, droppingMinutes, 0, 0);
+      
+      // If dropping time is earlier than boarding time, add 1 day to dropping time
+      if (droppingTime < boardingTime) {
+        droppingTime.setDate(droppingTime.getDate() + 1);
+      }
+  
+      // Create the booking data - use the exact fare breakdown from the API
       const bookingData = {
         mobile: userProfile.mobile || "9154227800",
         email: userProfile.email || "syed@b.com",
-        seat_map: [
-          {
-            passenger_age: 25,
-            seat_id: selectedSeat.id,
-            passenger_name: userProfile.name || "John",
-            gender: userProfile.gender || "Male"
-          }
-        ],
+        seat_map: [{
+          passenger_age: 25,
+          seat_id: selectedSeat.id || selectedSeat.seat_id,
+          passenger_name: userProfile.name || "John",
+          gender: userProfile.gender || "Male"
+        }],
         trip_id: parseInt(id.toString()),
         boarding_point_id: selectedBoardingPoint.id,
         dropping_point_id: selectedDroppingPoint.id,
         boarding_point_time: boardingTime.toISOString(),
         dropping_point_time: droppingTime.toISOString(),
-        total_collect_amount: totalFare,
+        // Use the exact fare sum as the total amount
+        total_collect_amount: exactFare,
+        // Include the fare components EXACTLY as they appear in the API response
+        fare: fareDetails,
         main_category: 1,
         freshcardId: 1,
         freshcard: false,
         return_url: window.location.origin + "/booking-confirmation"
       };
-
-      console.log("Sending booking request:", bookingData);
-      console.log("Request URL:", "http://localhost:8000/tickets/block");
-
-      // Make API call to block ticket
+  
+      // Log the complete booking data for debugging
+      console.log("Sending booking data:", JSON.stringify(bookingData, null, 2));
+  
+      // Make the API call with auth token
       const response = await fetch('http://localhost:8000/tickets/block', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+          'Authorization': `Bearer ${authToken}`
         },
         body: JSON.stringify(bookingData)
       });
-      
+  
       console.log("Response status:", response.status);
-      
-      // Important: Check if the response is empty before trying to parse it
-      const responseText = await response.text();
-      console.log("Raw response:", responseText);
-      
-      if (!responseText) {
-        throw new Error('Server returned an empty response');
-      }
-      
-      // Try to parse the response text as JSON
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (error) {
-        console.error('Failed to parse response as JSON:', responseText);
-        throw new Error('Invalid response format from server');
-      }
-      
+  
       if (!response.ok) {
-        throw new Error(data?.message || `Server error: ${response.status}`);
+        const errorData = await response.json();
+        throw new Error(errorData.message || `Server error: ${response.status}`);
       }
-      
-      console.log("Booking response:", data);
-      
-      // Check if we have payment details with a web URL
-      if (data.payment_links && data.payment_links.web) {
-        // Open payment page in iframe or new window
-        setPaymentUrl(data.payment_links.web);
-        toast.success("Ticket blocked successfully! Please complete payment.");
-      } 
-      // Check for payment_details.payment_url (from your original code)
-      else if (data.payment_details && data.payment_details.payment_url) {
-        setPaymentUrl(data.payment_details.payment_url);
-        toast.success("Ticket blocked successfully! Please complete payment.");
-      } 
-      // For other types of successful responses
-      else if (data.status === "NEW" || data.status === "SUCCESS") {
-        toast.success("Ticket blocked successfully!");
-        // Check if there's an SDK payload with a client payload
-        if (data.sdk_payload && data.sdk_payload.payload) {
-          toast.info("Please complete payment to confirm your booking.");
-          // You could also use the SDK payload here if needed
-        }
-        setConfirmStep(false);
+  
+      // Process successful response
+      const data = await response.json();
+      console.log("Full booking response:", data);
+
+      // Get the payment URL from the response
+      let paymentUrl: string | undefined;
+
+      if (data.payment_details?.payment_links?.web) {
+        paymentUrl = data.payment_details.payment_links.web;
+      } else if (data.payment_links?.web) {
+        paymentUrl = data.payment_links.web;
+      } else if (data.id) {
+        paymentUrl = `https://sandbox.assets.juspay.in/payment-page/order/${data.id}`;
+      }
+
+      // Redirect to payment URL if found
+      if (paymentUrl) {
+        toast.success("Redirecting to payment page...");
+        window.location.href = paymentUrl; // Redirect to payment URL
       } else {
-        // No payment URL but request was successful
-        toast.success("Ticket blocked successfully!");
-        toast.info("Please check your email for payment instructions.");
-        setConfirmStep(false);
+        console.error("Payment URL not found in response:", data);
+        throw new Error('Payment URL not found in response');
       }
+  
     } catch (error: any) {
       console.error("Error blocking ticket:", error);
-      setBookingError(error.message || "Failed to block ticket");
-      toast.error(error.message || "Failed to block ticket");
+      if (error.message === 'Authentication required') {
+        toast.error("Please login to book tickets");
+      } else {
+        setBookingError(error.message || "Failed to block ticket");
+        toast.error(error.message || "Failed to block ticket");
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -287,7 +322,6 @@ export function BusCard({
           className="w-full mt-1 px-3 py-2 bg-gray-50 dark:bg-gray-700 flex justify-between items-center rounded-lg text-left border border-gray-200 dark:border-gray-600 transition-colors hover:bg-gray-100 dark:hover:bg-gray-600"
         >
           <div>
-            {/* FIX HERE - Access the name property instead of rendering the object */}
             <p className="text-base text-gray-900 dark:text-gray-100 leading-tight">
               {selectedPoint ? selectedPoint.name : 'Select Location'}
             </p>
@@ -312,7 +346,6 @@ export function BusCard({
                   setIsOpen(false);
                 }}
               >
-                {/* Each point is rendered correctly here with its properties */}
                 <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{point.name}</p>
                 {point.landmark && (
                   <p className="text-xs text-gray-500 dark:text-gray-400">{point.landmark}</p>
@@ -383,7 +416,7 @@ export function BusCard({
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Selected Seat:</span>
-                  <span className="font-medium">{selectedSeat?.seatName} (₹{selectedSeat?.price})</span>
+                  <span className="font-medium">{selectedSeat?.seatName} (₹{selectedSeat ? calculateTotalFare(selectedSeat) : '0'})</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Boarding Point:</span>
@@ -424,9 +457,44 @@ export function BusCard({
                 </div>
               </div>
               
-              {/* Total fare calculation */}
+              {/* Total fare calculation with detailed breakdown */}
               <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-                <div className="flex justify-between font-medium">
+                {selectedSeat && (
+                  <>
+                    {/* Display fare breakdown if available */}
+                    {(selectedSeat.fare || 
+                     (selectedSeat.window && selectedSeat.window.fare) || 
+                     (selectedSeat.aisle && selectedSeat.aisle.fare)) && (
+                      <>
+                        <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                          <span>Base Fare:</span>
+                          <span>₹{
+                            selectedSeat.fare ? selectedSeat.fare["Base Fare"] :
+                            selectedSeat.window && selectedSeat.window.fare ? selectedSeat.window.fare["Base Fare"] :
+                            selectedSeat.aisle && selectedSeat.aisle.fare ? selectedSeat.aisle.fare["Base Fare"] : 0
+                          }</span>
+                        </div>
+                        <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                          <span>GST:</span>
+                          <span>₹{
+                            selectedSeat.fare ? selectedSeat.fare["GST"] :
+                            selectedSeat.window && selectedSeat.window.fare ? selectedSeat.window.fare["GST"] :
+                            selectedSeat.aisle && selectedSeat.aisle.fare ? selectedSeat.aisle.fare["GST"] : 0
+                          }</span>
+                        </div>
+                        <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                          <span>Discount:</span>
+                          <span>₹{
+                            selectedSeat.fare ? selectedSeat.fare["Discount"] :
+                            selectedSeat.window && selectedSeat.window.fare ? selectedSeat.window.fare["Discount"] :
+                            selectedSeat.aisle && selectedSeat.aisle.fare ? selectedSeat.aisle.fare["Discount"] : 0
+                          }</span>
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+                <div className="flex justify-between font-medium mt-2">
                   <span>Total Fare:</span>
                   <span>₹{selectedSeat ? calculateTotalFare(selectedSeat) : '0'}</span>
                 </div>
@@ -479,23 +547,23 @@ export function BusCard({
                         <div className="grid grid-cols-2 gap-2">
                           {seatsByType[type].map(seat => (
                             <button
-                              key={seat.id}
+                              key={seat.id || seat.seat_id}
                               onClick={() => handleSeatClick(seat)}
                               className={`p-2 rounded-lg border text-left ${
-                                selectedSeat?.id === seat.id 
+                                selectedSeat?.id === seat.id || selectedSeat?.seat_id === seat.seat_id
                                   ? 'border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20' 
                                   : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750'
                               }`}
                             >
                               <div className="flex justify-between items-center">
                                 <span className="font-medium text-gray-900 dark:text-white">
-                                  {seat.label || `Seat ${seat.seatName}`}
+                                  {seat.label || `Seat ${seat.seatName || seat.seatNumber}`}
                                 </span>
-                                {selectedSeat?.id === seat.id && (
+                                {(selectedSeat?.id === seat.id || selectedSeat?.seat_id === seat.seat_id) && (
                                   <Check className="h-4 w-4 text-yellow-500" />
                                 )}
                               </div>
-                              <span className="text-sm text-gray-500 dark:text-gray-400">₹{seat.price}</span>
+                              <span className="text-sm text-gray-500 dark:text-gray-400">₹{calculateTotalFare(seat)}</span>
                             </button>
                           ))}
                         </div>
@@ -544,73 +612,6 @@ export function BusCard({
           )}
         </div>
       )}
-      
-      {/* Payment iframe modal */}
-      {paymentUrl && (
-        <PaymentIframe 
-          paymentUrl={paymentUrl} 
-          onClose={() => {
-            setPaymentUrl(null);
-            // Optionally refresh or reset the form after closing
-            setConfirmStep(false); 
-          }} 
-        />
-      )}
     </div>
   );
 }
-
-// Payment iframe component
-const PaymentIframe = ({ paymentUrl, onClose }: { paymentUrl: string; onClose: () => void }) => {
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // Set a timeout to hide the loading indicator
-    const timer = setTimeout(() => {
-      setLoading(false);
-    }, 3000);
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75">
-      <div className="bg-white dark:bg-gray-800 p-4 rounded-lg flex flex-col w-full max-w-4xl h-[90vh] relative">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Complete Payment</h2>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-          >
-            <svg 
-              className="w-6 h-6 text-gray-500" 
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        
-        {loading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-gray-800 z-10">
-            <div className="loader animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-            <p className="ml-2 text-gray-600 dark:text-gray-300">Loading payment page...</p>
-          </div>
-        )}
-        
-        <iframe 
-          src={paymentUrl}
-          className="flex-1 w-full border-0 rounded"
-          title="Payment Page"
-          sandbox="allow-forms allow-scripts allow-same-origin allow-top-navigation allow-popups"
-        />
-        
-        <div className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-          This payment is securely processed by our payment partner. Do not close this window until payment is complete.
-        </div>
-      </div>
-    </div>
-  );
-};
