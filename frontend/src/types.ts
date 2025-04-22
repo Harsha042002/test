@@ -6,6 +6,7 @@ export interface Message {
   timestamp: Date;
   busRoutes?: BusRoute[];
   rawData?: any; // Add this property to store the complete JSON response
+isLoading?: boolean; // Optional property to indicate loading state
 }
 
 export interface Chat {

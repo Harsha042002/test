@@ -8,6 +8,7 @@ import requests
 import asyncio
 import redis
 import time
+import datetime
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, Response, UploadFile, File, Query
@@ -32,6 +33,22 @@ load_dotenv()
 
 # Initialize Redis client using configuration
 redis_client = redis.Redis(**Config.get_redis_config())
+
+def detect_language(text):
+    """
+    Detect the language of the given text.
+    Currently a simple implementation that defaults to english.
+    """
+    # Add more sophisticated detection if needed
+    if text:
+        # Very basic detection - could be enhanced with a proper language detection library
+        text_lower = text.lower()
+        if any(word in text_lower for word in ['हिंदी', 'में', 'का', 'है', 'हूँ', 'नहीं']):
+            return 'hindi'
+        if any(word in text_lower for word in ['తెలుగు', 'లో', 'కు', 'లేదు', 'ఉంది']):
+            return 'telugu'
+        # Add more languages as needed
+    return 'english'
 
 # Define lifespan context manager
 @asynccontextmanager
@@ -58,6 +75,7 @@ class QueryRequest(BaseModel):
     stream: Optional[bool] = True
     gender: Optional[str] = None
     location: Optional[Dict[str, float]] = None
+    user_mobile: Optional[str] = None
     provider: Optional[str] = None  # Added for model selection
     model: Optional[str] = None     # Added for model selection
     silent: Optional[bool] = False  # Added for silent model switching
@@ -95,8 +113,10 @@ class RedisConversationManager:
         self.redis = redis_client
         self.conversation_prefix = "fresh_bus:conversation:"
         self.session_index_prefix = "fresh_bus:session_index:"
+        self.user_index_prefix = "fresh_bus:user_index:"  # Add this line
+        self.global_index_key = "fresh_bus:conversations"
     
-    def save_conversation(self, session_id, messages):
+    def save_conversation(self, session_id, messages, user_id=None):
         try:
             if not messages:
                 return None
@@ -112,13 +132,15 @@ class RedisConversationManager:
                 "messages": json.dumps(messages)
             }
             
+            if user_id:
+                conversation_data["user_id"] = str(user_id)
             # Save conversation
             key = f"{self.conversation_prefix}{conversation_id}"
             self.redis.hmset(key, conversation_data)
-            
             # Add to session index
             self.redis.sadd(f"{self.session_index_prefix}{session_id}", conversation_id)
-            
+            if user_id:
+                self.redis.sadd(f"{self.user_index_prefix}{user_id}", conversation_id)
             # Add to global index
             self.redis.zadd("fresh_bus:conversations", {conversation_id: time.time()})
             
@@ -843,6 +865,33 @@ class VectorDBManager:
 # FreshBusAssistant Class
 #################################
 class FreshBusAssistant:
+    def initialize_ai_provider(self):
+        try:
+            provider_name = Config.DEFAULT_AI_PROVIDER.lower().strip()
+            provider_model = Config.DEFAULT_AI_MODEL
+            
+            # Validate provider name
+            valid_providers = ["gemini", "claude"]
+            if provider_name not in valid_providers:
+                print(f"Invalid provider '{provider_name}', falling back to gemini")
+                provider_name = "gemini"
+                provider_model = "gemini-pro"
+
+            self.ai_provider = AIProviderFactory.create_provider(
+                provider_name=provider_name,
+                model=provider_model
+            )
+            print(f"Initialized {provider_name} provider with model {provider_model}")
+            return True
+        except Exception as e:
+            print(f"Error initializing AI provider: {e}")
+            # Set fallback provider
+            self.ai_provider = AIProviderFactory.create_provider(
+                provider_name="gemini",
+                model="gemini-pro"
+            )
+            return False
+
     def __init__(self):
         self.system_prompt = ""
         self.load_system_prompt(Config.DEFAULT_SYSTEM_PROMPT_PATH)
@@ -863,32 +912,7 @@ class FreshBusAssistant:
         self.user_tickets_cache_expiry = {}
         
         # Initialize AI provider from config
-        provider_name = Config.DEFAULT_AI_PROVIDER
-        provider_model = Config.DEFAULT_AI_MODEL
-        
-        # Clean up provider name by removing any comments and whitespace
-        if '#' in provider_name:
-            provider_name = provider_name.split('#')[0].strip()
-            print(f"WARNING: Cleaned up provider name to: {provider_name}")
-        
-        # Ensure provider name is valid
-        valid_providers = ["gemini", "claude"]
-        if provider_name.lower() not in valid_providers:
-            print(f"WARNING: Unknown provider '{provider_name}', falling back to 'gemini'")
-            provider_name = "gemini"
-            
-        try:
-            self.ai_provider = AIProviderFactory.create_provider(
-                provider_name=provider_name,
-                model=provider_model
-            )
-        except ValueError as e:
-            print(f"Error initializing provider {provider_name}: {e}")
-            print("Falling back to Gemini provider")
-            self.ai_provider = AIProviderFactory.create_provider(
-                provider_name="gemini",
-                model="gemini-2.0-flash"
-            )
+        self.initialize_ai_provider()
         
         # Initialize cost tracker
         self.cost_tracker = AICostTracker()
@@ -927,85 +951,33 @@ class FreshBusAssistant:
 
     async def init_system_prompt(self):
         if not self.system_prompt_initialized:
-            # Load identity info from a file if it exists, otherwise use default
-            identity_info_path = os.path.join(os.path.dirname(Config.DEFAULT_SYSTEM_PROMPT_PATH), "identity_info.txt")
-            identity_info = ""
-            
             try:
+                # Load base system prompt (qa_prompt.txt)
+                with open(Config.DEFAULT_SYSTEM_PROMPT_PATH, 'r', encoding='utf-8') as f:
+                    self.system_prompt = f.read()
+                    print(f"Loaded base prompt ({len(self.system_prompt)} chars)")
+
+                # Load identity info
+                identity_info_path = os.path.join(os.path.dirname(Config.DEFAULT_SYSTEM_PROMPT_PATH), "identity_info.txt")
                 if os.path.exists(identity_info_path):
                     with open(identity_info_path, 'r', encoding='utf-8') as f:
                         identity_info = f.read()
-                        print(f"Loaded identity info from {identity_info_path}")
-                else:
-                    # Default identity info
-                    identity_info = """
-                    
-                    ASSISTANT IDENTITY:
-                    - Your name is Ṧ.AI (pronounced 'Sai')
-                    - You are the Fresh Bus AI travel assistant
-                    - When asked about your name or identity, always identify yourself as Ṧ.AI
-                    - When asked simple greeting questions like "hi", "hello", respond with a friendly greeting
-                    
-                    LANGUAGE CAPABILITIES:
-                    - You can respond fluently in multiple Indian languages including Telugu, Hindi, Tamil, Kannada, and Malayalam
-                    - When a user asks a question in one of these languages, respond in the same language
-                    - For transliteration requests, you can convert between scripts while maintaining the same language (e.g., Telugu written in Latin script or 'Tenglish')
-                    - Never claim you cannot speak or understand these languages
-                    
-                    HANDLING NON-BUS QUERIES:
-                    - For general questions not related to bus booking, provide brief, helpful responses
-                    - For identity questions like "what's your name", always state that you are Ṧ.AI
-                    - For greetings like "hi", "hello", respond with a friendly greeting
-                    - Only direct users back to bus-related topics for completely off-topic conversations
-                    
-                    OUTPUT FORMAT FOR BUS LISTINGS:
-                    When providing bus information, use this JSON format inside triple backticks:
-                    ```json
-                    {
-                    "trips": [
-                        {
-                        "busNumber": "123",
-                        "price": "499",
-                        "seats": "84",
-                        "rating": "4.6",
-                        "from": "Hyderabad",
-                        "to": "Guntur",
-                        "boardingPoint": "L B Nagar Metro Station",
-                        "droppingPoint": "NTR CIRCLE RTC Bus Stand",
-                        "departureTime": "10:00 PM",
-                        "arrivalTime": "5:30 AM",
-                        "duration": "7h 30m",
-                        "tripId": "12345",
-                        "busType": "AC Sleeper",
-                        "recommendations": {
-                            "reasonable": {
-                            "window": {"seatNumber": "1", "price": "449"},
-                            "aisle": {"seatNumber": "2", "price": "449"}
-                            }
-                        }
-                        }
-                    ]
-                    }
-                    ```
-                    
-                    When the user wants this information in another language, first provide the JSON, then translate it to the requested language.
-                    """
+                        print(f"Loaded identity info ({len(identity_info)} chars)")
+                        self.system_prompt = f"{self.system_prompt}\n\n{identity_info}"
+
+                # Validate system prompt content
+                if "FreshBus" not in self.system_prompt or "Ṧ.AI" not in self.system_prompt:
+                    raise ValueError("System prompt appears incomplete!")
+
+                # Initialize VectorDB
+                await self.embeddings_client.init_session()
+                await self.vector_db.store_system_prompt(self.system_prompt)
+                self.system_prompt_initialized = True
+                print("System prompt initialization complete")
+                return True
             except Exception as e:
-                print(f"Error loading identity info: {e}")
-                # Use a minimal identity info if there's an error
-                identity_info = """
-                ASSISTANT IDENTITY:
-                - Your name is Ṧ.AI (pronounced 'Sai')
-                - You are the Fresh Bus AI travel assistant
-                """
-            
-            self.system_prompt += identity_info
-            
-            # Initialize VectorDB with the enhanced system prompt
-            await self.embeddings_client.init_session()
-            await self.vector_db.store_system_prompt(self.system_prompt)
-            self.system_prompt_initialized = True
-            print("Enhanced system prompt stored in vector DB")
+                print(f"Error initializing system prompt: {e}")
+                return False
     
     async def init_http_session(self):
         if self.http_session is None:
@@ -1073,6 +1045,27 @@ class FreshBusAssistant:
         # Default to English
         return "english"
     
+    
+    
+    def is_simple_query(self, query):
+        """Detect if this is a simple greeting or identity question"""
+        query_lower = query.lower().strip()
+        simple_greetings = ["hi", "hello", "hey", "hola", "namaste", "greetings"]
+        
+        # Check for simple greetings
+        if query_lower in simple_greetings or query_lower.startswith("hi ") or query_lower.startswith("hello "):
+            return True
+        
+        # Check for identity/name questions
+        if "name" in query_lower and ("your" in query_lower or "you" in query_lower):
+            return True
+        
+        # Check for "who are you" type questions
+        if "who are you" in query_lower or "what are you" in query_lower:
+            return True
+        
+        return False
+    
     # Method to detect bus tracking queries
     def is_bus_tracking_query(self, query):
         """Detect if a query is asking about bus tracking or ETA"""
@@ -1087,81 +1080,308 @@ class FreshBusAssistant:
         query_lower = query.lower()
         return any(phrase in query_lower for phrase in tracking_phrases)
     
-    async def fetch_user_profile(self, auth_token):
-        """Fetch user profile data from the Fresh Bus API"""
-        if not self.http_session:
-            await self.init_http_session()
+    async def handle_authenticated_tracking_request(self, access_token):
+        """Handle authenticated tracking request by fetching user's first ticket and providing tracking info."""
+        try:
+            # Fetch user's tickets using their access token
+            tickets_url = f"{self.BASE_URL_CUSTOMER}/tickets"
+            print(f"Fetching user tickets from: {tickets_url}")
+            
+            async with self.http_session.get(
+                tickets_url,
+                headers={"Authorization": f"Bearer {access_token}"}
+            ) as tickets_response:
+                if tickets_response.status != 200:
+                    error_text = await tickets_response.text()
+                    print(f"Error fetching tickets: {tickets_response.status}")
+                    print(f"Error response: {error_text}")
+                    return "I'm having trouble accessing your ticket information at the moment. Please try again in a few minutes or contact Fresh Bus support if the issue persists."
+                
+                tickets_data = await tickets_response.json()
+                print(f"Found {len(tickets_data)} tickets")
+                
+                if not tickets_data:
+                    return "I don't see any bus bookings in your account. If you've recently booked a ticket, it might take a moment to appear in your account. Please check back in a few minutes."
+                
+                # Take the first ticket from the response
+                current_ticket = tickets_data[0]
+                
+                # Extract tracking URL
+                tracking_url = current_ticket.get("trackingUrlNew")
+                if not tracking_url:
+                    tracking_url = current_ticket.get("trackingUrl")
+                
+                # Get destination time to check if trip is completed
+                is_completed = False
+                if isinstance(current_ticket.get("destination"), dict) and current_ticket["destination"].get("time"):
+                    dest_time_str = current_ticket["destination"]["time"]
+                    try:
+                        # Parse ISO format date string to datetime
+                        dest_time = datetime.datetime.fromisoformat(dest_time_str.replace('Z', '+00:00'))
+                        
+                        # Convert to local time for comparison
+                        dest_time = dest_time.replace(tzinfo=datetime.timezone.utc).astimezone(tz=None)
+                        
+                        # Check if the trip is completed
+                        current_time = datetime.datetime.now()
+                        is_completed = dest_time < current_time
+                    except Exception as e:
+                        print(f"Error parsing date {dest_time_str}: {e}")
+                
+                # Get basic ticket information
+                from_location = current_ticket.get("source", {}).get("name", "your pickup point")
+                to_location = current_ticket.get("destination", {}).get("name", "your destination")
+                departure_time = self.format_datetime(current_ticket.get("source", {}).get("time", ""))
+                arrival_time = self.format_datetime(current_ticket.get("destination", {}).get("time", ""))
+                booking_id = current_ticket.get("bookingid", "")
+                
+                # If trip is completed, show NPS prompt
+                if is_completed:
+                    response = f"I found your recent journey from {from_location} to {to_location}.\n\n"
+                    response += f"This trip completed on {arrival_time}.\n\n"
+                    response += "How was your experience with Fresh Bus? We'd love to hear your feedback to improve our service."
+                    return response
+                
+                # Otherwise, provide tracking info for active trip
+                response = f"I found your ticket from {from_location} to {to_location}!\n\n"
+                response += f"📍 Trip: {from_location} to {to_location}\n"
+                response += f"🕒 Departure: {departure_time}\n"
+                response += f"🏁 Estimated Arrival: {arrival_time}\n"
+                if booking_id:
+                    response += f"🎫 Booking ID: {booking_id}\n\n"
+                
+                if tracking_url:
+                    response += f"Track your bus in real-time here: {tracking_url}\n\n"
+                    response += "This link will show you the live location of your bus on a map."
+                else:
+                    response += "Real-time tracking isn't available for this journey. Please check the Fresh Bus app for more details."
+                
+                return response
+                    
+        except Exception as e:
+            print(f"Error in handle_authenticated_tracking_request: {e}")
+            import traceback
+            traceback.print_exc()
+            return "I encountered an error while getting your bus location. Please check the Fresh Bus app for the most current tracking information."
+        
+    def format_datetime(self, datetime_str):
+        """Format ISO datetime string to readable format."""
+        if not datetime_str:
+            return "Not available"
         
         try:
-            # Call the profile API endpoint
-            headers = {
-                "Authorization": f"Bearer {auth_token}",
-                "Content-Type": "application/json"
-            }
-            
-            url = f"{self.BASE_URL}/profile"
-            print(f"Fetching user profile: {url}")
-            
-            async with self.http_session.get(url, headers=headers) as response:
+            dt = datetime.datetime.fromisoformat(datetime_str.replace('Z', '+00:00'))
+            return dt.strftime("%d %b %Y, %I:%M %p")
+        except Exception:
+            return datetime_str
+    
+    async def fetch_user_profile(self, access_token: str, refresh_token: Optional[str] = None):
+        """
+        Fetch the user's profile from the customer API gateway.
+        Sends access_token and refresh_token as cookies, plus the Bearer header.
+        """
+        if not self.http_session:
+            await self.init_http_session()
+    
+        url = f"{self.BASE_URL_CUSTOMER}/profile"
+        
+        # Setup headers with Bearer token
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        }
+    
+        # Setup cookies with both tokens
+        cookies = {
+            "access_token": access_token
+        }
+        if refresh_token:
+            cookies["refresh_token"] = refresh_token
+            headers["refresh_token"] = refresh_token  # Also send as header just in case
+    
+        print(f"Fetching user profile from {url}")
+        print(f"Using cookies: {list(cookies.keys())}")
+        print(f"Using headers: {list(headers.keys())}")
+    
+        try:
+            async with self.http_session.get(
+                url,
+                headers=headers,
+                cookies=cookies
+            ) as response:
                 if response.status == 200:
                     profile_data = await response.json()
-                    print(f"Successfully fetched user profile")
+                    print(f"Successfully fetched profile for user: {profile_data.get('name', 'Unknown')}")
                     return profile_data
                 else:
-                    print(f"Error fetching user profile: {response.status}")
                     error_text = await response.text()
-                    print(f"Error response: {error_text}")
+                    print(f"❌ Error fetching user profile: {response.status} — {error_text}")
+                    if response.status == 401 and refresh_token:
+                        print("Token expired, will attempt refresh")
                     return None
         except Exception as e:
-            print(f"Exception fetching user profile: {e}")
+            print(f"Exception in fetch_user_profile: {e}")
             return None
+            await self.init_http_session()
+
+        url = f"{self.BASE_URL_CUSTOMER}/profile"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json"
+        }
+        # send both tokens as cookies
+        cookies = {"access_token": access_token}
+        if refresh_token:
+            cookies["refresh_token"] = refresh_token
+
+        print(f"Fetching user profile: {url} with cookies {list(cookies.keys())}")
+        async with self.http_session.get(url, headers=headers, cookies=cookies) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                print("✅ Successfully fetched user profile")
+                return data
+            else:
+                err = await resp.text()
+                print(f"❌ Error fetching user profile: {resp.status} — {err}")
+                return None
+
+
+
     
     # Updated method to handle user tickets with caching
-    async def fetch_user_tickets(self, auth_token, force_refresh=False):
-        """Fetch user's tickets and cache them for a short period"""
-        if not auth_token:
-            return None
-            
-        # Check cache first (if not forced to refresh)
-        cache_key = auth_token[:10]  # Use part of token as key
-        current_time = time.time()
-        
-        if not force_refresh and cache_key in self.user_tickets_cache:
-            # Use cache if it's not expired
-            if current_time - self.user_tickets_cache_expiry.get(cache_key, 0) < Config.CACHE_EXPIRY_SECONDS:
-                return self.user_tickets_cache[cache_key]
-        
+    async def fetch_user_tickets(self, access_token):
+        """Fetch user tickets with proper authentication"""
         if not self.http_session:
             await self.init_http_session()
-        
+            
         try:
-            # Call the tickets API endpoint
-            url = f"{self.BASE_URL_CUSTOMER}/tickets"
+            # Use the tickets API endpoint with authentication
+            url = f"{self.base_url_customer}/tickets"
             print(f"Fetching user tickets: {url}")
             
             headers = {
-                "Authorization": f"Bearer {auth_token}",
+                "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json"
             }
             
             async with self.http_session.get(url, headers=headers) as response:
                 if response.status == 200:
-                    tickets_data = await response.json()
-                    
-                    # Cache the result
-                    self.user_tickets_cache[cache_key] = tickets_data
-                    self.user_tickets_cache_expiry[cache_key] = current_time
-                    
-                    print(f"Successfully fetched user tickets: {len(tickets_data)} tickets")
-                    return tickets_data
+                    tickets = await response.json()
+                    print(f"Successfully fetched {len(tickets)} tickets")
+                    return tickets
                 else:
-                    print(f"Error fetching user tickets: {response.status}")
+                    print(f"Error fetching tickets: {response.status}")
                     error_text = await response.text()
                     print(f"Error response: {error_text}")
-                    return None
+                    return []
         except Exception as e:
-            print(f"Exception fetching user tickets: {e}")
-            return None
+            print(f"Exception fetching tickets: {e}")
+            return []
+
+    async def process_user_tickets(self, tickets):
+        """Process user tickets into active, completed, and future categories"""
+        if not tickets:
+            return {"active": [], "completed": [], "future": []}
+        
+        now = datetime.now()
+        active_tickets = []
+        completed_tickets = []
+        future_tickets = []
+        
+        try:
+            for ticket in tickets:
+                # Extract journey date from the ticket
+                journey_date_str = ticket.get("date")
+                
+                if not journey_date_str:
+                    continue
+                    
+                try:
+                    journey_date = datetime.fromisoformat(journey_date_str.replace('Z', '+00:00'))
+                    
+                    # Add a field for easy comparison
+                    ticket["journey_datetime"] = journey_date
+                    
+                    # Get status from ticket
+                    status = ticket.get("status", "").lower()
+                    
+                    # Categorize based on status or date
+                    if status == "completed":
+                        completed_tickets.append(ticket)
+                    elif journey_date > now:
+                        future_tickets.append(ticket)
+                    else:
+                        active_tickets.append(ticket)
+                        
+                except Exception as date_error:
+                    print(f"Error parsing date {journey_date_str}: {date_error}")
+                    continue
+            
+            # Sort each list by date
+            active_tickets.sort(key=lambda x: x["journey_datetime"], reverse=False)
+            completed_tickets.sort(key=lambda x: x["journey_datetime"], reverse=True)
+            future_tickets.sort(key=lambda x: x["journey_datetime"], reverse=False)
+            
+            print(f"Processed tickets: {len(active_tickets)} active, {len(completed_tickets)} completed, {len(future_tickets)} future")
+            
+            return {
+                "active": active_tickets,
+                "completed": completed_tickets,
+                "future": future_tickets
+            }
+        except Exception as e:
+            print(f"Error processing tickets: {e}")
+            return {"active": [], "completed": [], "future": []}
+
+    async def fetch_eta_data(self, trip_id):
+        """Fetch ETA data for a trip"""
+        if not self.http_session:
+            await self.init_http_session()
+            
+        try:
+            # Use the ETA API endpoint
+            url = f"{self.base_url}/eta-data?id={trip_id}"
+            print(f"Fetching ETA data: {url}")
+            
+            async with self.http_session.get(url) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    print(f"Error fetching ETA data: {response.status}")
+                    error_text = await response.text()
+                    print(f"Error response: {error_text}")
+                    return {"message": "Could not retrieve tracking information"}
+        except Exception as e:
+            print(f"Exception fetching ETA data: {e}")
+            return {"message": f"Error retrieving tracking information: {str(e)}"}
+
+    def is_bus_tracking_query(self, query):
+        """Check if the query is related to bus tracking"""
+        tracking_keywords = [
+            "where is my bus", "track my bus", "bus location", "bus status",
+            "journey status", "my trip", "my bus", "eta", "arrival time",
+            "when will my bus arrive", "bus tracking", "track bus",
+            "bus position", "locate my bus", "find my bus", "current location"
+        ]
+        
+        query_lower = query.lower()
+        
+        for keyword in tracking_keywords:
+            if keyword in query_lower:
+                return True
+                
+        return False
+
+    async def handle_unauthenticated_tracking_request(self):
+        """Generate a helpful response for tracking requests without authentication"""
+        tracking_response = (
+            "I need to see your active tickets to track your bus. "
+            "Please log in to your Fresh Bus account first, then I can show you your bus location, "
+            "estimated arrival time, and journey status.\n\n"
+            "After logging in, you can ask me 'Where is my bus?' again, and I'll provide real-time tracking information."
+        )
+        return tracking_response
     
     # Process tickets to find active, completed, and future tickets
     async def process_user_tickets(self, tickets):
@@ -1284,9 +1504,9 @@ class FreshBusAssistant:
             return {"message": f"Error retrieving tracking information: {str(e)}"}
     
     # Method to fetch NPS (feedback) data
-    async def fetch_nps_data(self, trip_id, auth_token=None):
+    async def fetch_nps_data(self, trip_id, access_token=None):
         """Fetch NPS/feedback data for a completed trip"""
-        if not auth_token:
+        if not access_token:
             return {"message": "Authentication required to fetch feedback data"}
             
         if not self.http_session:
@@ -1298,7 +1518,7 @@ class FreshBusAssistant:
             print(f"Fetching feedback data: {url}")
             
             headers = {
-                "Authorization": f"Bearer {auth_token}",
+                "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json"
             }
             
@@ -1392,14 +1612,14 @@ class FreshBusAssistant:
         
         return nps_json
         
-    async def get_active_tickets_and_status(self, auth_token):
+    async def get_active_tickets_and_status(self, access_token):
         """Get user's active tickets and their status (future, ongoing, or completed)"""
         if not self.http_session:
             await self.init_http_session()
         
         try:
             # Get all tickets
-            tickets = await self.fetch_user_tickets(auth_token)
+            tickets = await self.fetch_user_tickets(access_token)
             if not tickets:
                 return None
                 
@@ -1465,538 +1685,181 @@ class FreshBusAssistant:
         
         return response_text
     
-    async def generate_direct_bus_response(self, api_data, context, return_json=False):
-        """
-        Generate bus response DIRECTLY from API data without allowing hallucination
-        Optionally return as JSON if return_json=True
-        """
-        # Check for invalid route first
+    async def generate_direct_bus_response(self, api_data: dict, context: dict, *, return_json: bool = False):
+        import json
+        from datetime import datetime, timezone, timedelta
+
+        # ── invalid-route / no-trips ─────────────────────────
         if api_data.get("invalid_route"):
-            invalid_route = api_data["invalid_route"]
-            source = invalid_route["requested_source"].capitalize()
-            destination = invalid_route["requested_destination"].capitalize()
-            
-            if return_json:
-                return {
-                    "error": "invalid_route",
-                    "message": f"No bus services from {source} to {destination}",
-                    "valid_routes": invalid_route["valid_routes"]
-                }
-                
-            response = f"I'm sorry, but we don't currently operate bus services from {source} to {destination}.\n\n"
-            response += "We offer the following routes:\n"
-            for route in invalid_route["valid_routes"]:
-                response += f"• {route}\n"
-            response += "\nWould you like to book a ticket for one of these routes instead? "
-            response += "Or you can check the Fresh Bus website/app for updates on other routes."
-            
-            return response
-        
+            bad = api_data["invalid_route"]
+            msg = (
+                f"No buses from {bad['requested_source'].title()} to "
+                f"{bad['requested_destination'].title()}. "
+                "Available routes:\n"
+                + "\n".join(f"• {r}" for r in bad["valid_routes"])
+            )
+            return {"error":"invalid_route","message":msg} if return_json else msg
+
         trips = api_data.get("trips", [])
-        
         if not trips:
-            if return_json:
-                return {"error": "no_trips", "message": "No buses found matching your criteria."}
-            return "I couldn't find any buses matching your criteria."
-        
-        # Get source and destination based on context
-        source = context.get('user_requested_source') or trips[0].get('source', 'Unknown')
-        destination = context.get('user_requested_destination') or trips[0].get('destination', 'Unknown')
-        
-        # Get IDs for source and destination
-        source_id = context.get('source_id') or self.stations.get(str(source).lower(), '3')
-        destination_id = context.get('destination_id') or self.stations.get(str(destination).lower(), '13')
-        
-        # Create header for text response
-        trip_count = len(trips)
-        header = f"I found {trip_count} bus{'es' if trip_count > 1 else ''} from {source} to {destination} for tomorrow:\n\n"
-        
-        # For JSON response
-        json_output = {"trips": []}
-        
-        formatted_buses = []
-        for idx, trip in enumerate(trips):
-            trip_id = trip.get('tripid', 'Unknown')
-            
-            # Get basic trip data directly from JSON
-            bus_data = {
-                'tripid': trip_id,
-                'fare': trip.get('fare', 'Unknown'),
-                'seats': trip.get('availableseats', 'Unknown'),
-                'rating': trip.get('redbusrating', 'Unknown'),
-                'boarding': trip.get('boardingpointname', 'Unknown boarding point'),
-                'dropping': trip.get('droppingpointname', 'Unknown dropping point'),
-                'vehicletype': trip.get('vehicletype', 'AC Seater')
-            }
-            
-            # Format times
-            if "boardingtime" in trip:
-                try:
-                    dt = datetime.fromisoformat(trip["boardingtime"].replace('Z', '+00:00'))
-                    ist_dt = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
-                    bus_data['departure_time'] = ist_dt.strftime("%I:%M %p").lstrip('0')
-                except:
-                    bus_data['departure_time'] = "Unknown"
-                    
-            if "droppingtime" in trip:
-                try:
-                    dt = datetime.fromisoformat(trip["droppingtime"].replace('Z', '+00:00'))
-                    ist_dt = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
-                    bus_data['arrival_time'] = ist_dt.strftime("%I:%M %p").lstrip('0')
-                except:
-                    bus_data['arrival_time'] = "Unknown"
-            
-            # Calculate duration
-            duration = "N/A"
-            if "boardingtime" in trip and "droppingtime" in trip:
-                try:
-                    b_dt = datetime.fromisoformat(trip["boardingtime"].replace('Z', '+00:00'))
-                    d_dt = datetime.fromisoformat(trip["droppingtime"].replace('Z', '+00:00'))
-                    duration_min = (d_dt - b_dt).total_seconds() / 60
-                    hours = int(duration_min // 60)
-                    minutes = int(duration_min % 60)
-                    duration = f"{hours}h {minutes}m"
-                except:
-                    duration = "N/A"
-            
-            # Process available seats from the API data
-            available_seats = []
-            seat_data = api_data.get("seats", [])
-            
-            # If seat data is not in main API response, fetch it for this trip
-            if not api_data.get("recommendations") and trip.get('tripid'):
-                # Convert source/destination names to IDs if needed
-                if not str(source_id).isdigit():
-                    source_id = self.stations.get(str(source_id).lower(), '3')
-                if not str(destination_id).isdigit():
-                    destination_id = self.stations.get(str(destination_id).lower(), '13')
-                
-                try:
-                    if not self.http_session:
-                        await self.init_http_session()
-                        
-                    seats_url = f"{self.BASE_URL}/trips/{trip_id}/seats?source_id={source_id}&destination_id={destination_id}"
-                    print(f"Fetching seats from: {seats_url}")
-                    
-                    async with self.http_session.get(seats_url) as response:
-                        if response.status == 200:
-                            seat_data = await response.json()
-                            if seat_data and isinstance(seat_data, dict) and "seats" in seat_data:
-                                for seat in seat_data["seats"]:
-                                    if seat and (not seat.get('isOccupied', False) and 
-                                        seat.get('availabilityStatus', '') in ['A', 'M', 'F']):
-                                        try:
-                                            seat_number = int(seat.get('seatName', '0'))
-                                            available_seats.append({
-                                                'number': seat_number,
-                                                'price': seat.get('totalFare', 0),
-                                                'seat_id': seat.get('id', 0),
-                                                'fare': seat.get('fare', {})
-                                            })
-                                        except (ValueError, TypeError):
-                                            # Skip invalid seat numbers
-                                            pass
-                except Exception as e:
-                    print(f"Error fetching seat data: {e}")
-            
-            # Create seat recommendations based on price tiers
-            recommendations = {
-                "Reasonable": {"window": [], "aisle": []},
-                "Premium": {"window": [], "aisle": []},
-                "Budget-Friendly": {"window": [], "aisle": []}
-            }
-            
-            # Track assigned seats to prevent duplicates
-            assigned_seats = set()
-            
-            if available_seats:
-                # Split seats into window and aisle first
-                window_seats = []
-                aisle_seats = []
-                
-                for seat in available_seats:
-                    seat_number = seat.get('number')
-                    if not seat_number:
-                        continue
-                    
-                    # Determine if it's window or aisle based on the CONFIG
-                    if seat_number in Config.WINDOW_SEATS:
-                        window_seats.append(seat)
-                    elif seat_number in Config.AISLE_SEATS:
-                        aisle_seats.append(seat)
-                
-                # Sort both lists by price
-                window_seats.sort(key=lambda s: s.get('price', 0))
-                aisle_seats.sort(key=lambda s: s.get('price', 0))
-                
-                # If we have both window and aisle seats, process them
-                if window_seats and aisle_seats:
-                    # Get min and max prices
-                    all_prices = [s.get('price', 0) for s in window_seats + aisle_seats]
-                    min_price = min(all_prices) if all_prices else 0
-                    max_price = max(all_prices) if all_prices else 0
-                    price_range = max_price - min_price
-                    
-                    # Define price thresholds with slightly different boundaries
-                    budget_max = min_price + (price_range * 0.33) if price_range > 0 else min_price + 50
-                    premium_min = max_price - (price_range * 0.33) if price_range > 0 else max_price - 50
-                    
-                    # Categorize window seats - FIXED: Check assigned_seats
-                    for seat in window_seats:
-                        seat_num = seat.get('number')
-                        if not seat_num or seat_num in assigned_seats:
-                            continue
-                            
-                        seat_price = seat.get('price', 0)
-                        if seat_price <= budget_max:
-                            recommendations["Budget-Friendly"]["window"].append(seat)
-                        elif seat_price >= premium_min:
-                            recommendations["Premium"]["window"].append(seat)
-                        else:
-                            recommendations["Reasonable"]["window"].append(seat)
-                            
-                        assigned_seats.add(seat_num)
-                    
-                    # Categorize aisle seats - FIXED: Check assigned_seats
-                    for seat in aisle_seats:
-                        seat_num = seat.get('number')
-                        if not seat_num or seat_num in assigned_seats:
-                            continue
-                            
-                        seat_price = seat.get('price', 0)
-                        if seat_price <= budget_max:
-                            recommendations["Budget-Friendly"]["aisle"].append(seat)
-                        elif seat_price >= premium_min:
-                            recommendations["Premium"]["aisle"].append(seat)
-                        else:
-                            recommendations["Reasonable"]["aisle"].append(seat)
-                            
-                        assigned_seats.add(seat_num)
-                    
-                    # Ensure we have at least one seat of each type in each category if possible
-                    for category in ["Budget-Friendly", "Reasonable", "Premium"]:
-                        # If we're missing window seats in this category
-                        if not recommendations[category]["window"] and category == "Budget-Friendly":
-                            # Try to get the cheapest window seat from Reasonable
-                            if recommendations["Reasonable"]["window"]:
-                                seat_to_move = min(recommendations["Reasonable"]["window"], 
-                                                key=lambda s: s.get("price", float('inf')))
-                                seat_num = seat_to_move.get("number")
-                                # Only move if not already assigned to another category
-                                if seat_num and (seat_num not in assigned_seats or 
-                                            seat_num in [s.get("number") for s in recommendations["Reasonable"]["window"]]):
-                                    recommendations[category]["window"].append(seat_to_move)
-                                    # Remove from Reasonable
-                                    recommendations["Reasonable"]["window"] = [
-                                        s for s in recommendations["Reasonable"]["window"] 
-                                        if s.get("number") != seat_to_move.get("number")
-                                    ]
-                        
-                        # If we're missing aisle seats in this category
-                        if not recommendations[category]["aisle"] and category == "Budget-Friendly":
-                            # Try to get the cheapest aisle seat from Reasonable
-                            if recommendations["Reasonable"]["aisle"]:
-                                seat_to_move = min(recommendations["Reasonable"]["aisle"], 
-                                                key=lambda s: s.get("price", float('inf')))
-                                seat_num = seat_to_move.get("number")
-                                # Only move if not already assigned to another category
-                                if seat_num and (seat_num not in assigned_seats or 
-                                            seat_num in [s.get("number") for s in recommendations["Reasonable"]["aisle"]]):
-                                    recommendations[category]["aisle"].append(seat_to_move)
-                                    # Remove from Reasonable
-                                    recommendations["Reasonable"]["aisle"] = [
-                                        s for s in recommendations["Reasonable"]["aisle"] 
-                                        if s.get("number") != seat_to_move.get("number")
-                                    ]
-            
-            # Final verification step to ensure no duplicates
-            seen_seats = {}
-            for category in recommendations:
-                for position in ["window", "aisle"]:
-                    unique_seats = []
-                    for seat in recommendations[category][position]:
-                        seat_num = seat.get("number")
-                        if seat_num and seat_num not in seen_seats:
-                            seen_seats[seat_num] = f"{category}-{position}"
-                            unique_seats.append(seat)
-                        elif seat_num:
-                            print(f"Preventing duplicate: Seat {seat_num} already in {seen_seats.get(seat_num, 'unknown')}")
-                    recommendations[category][position] = unique_seats
-            
-            # Build JSON output for this bus
-            json_bus = {
-                "busNumber": trip.get('servicenumber', 'Unknown'),
-                "price": str(bus_data.get('fare', 'Unknown')),
-                "seats": str(bus_data.get('seats', 'Unknown')),
-                "rating": str(bus_data.get('rating', 'Unknown')),
-                "from": source,
-                "to": destination,
-                "boardingPoint": bus_data.get('boarding', 'Unknown'),
-                "droppingPoint": bus_data.get('dropping', 'Unknown'),
-                "departureTime": bus_data.get('departure_time', 'Unknown'),
-                "arrivalTime": bus_data.get('arrival_time', 'Unknown'),
-                "duration": duration,
-                "tripId": str(trip_id),
-                "busType": bus_data.get('vehicletype', 'AC Seater'),
-                "recommendations": {}
-            }
-            
-            # Add recommendations to JSON
-            for category in recommendations:
-                # Convert to lowercase for JSON format
-                category_key = category.lower().replace('-', '_')
-                json_bus["recommendations"][category_key] = {
-                    "window": {},
-                    "aisle": {}
-                }
-                
-                # Add window seat if available
-                if recommendations[category]["window"]:
-                    window_seat = recommendations[category]["window"][0]
-                    json_bus["recommendations"][category_key]["window"] = {
-                        "seatNumber": str(window_seat.get("number", "")),
-                        "price": str(window_seat.get("price", "")),
-                        "seat_id": str(window_seat.get("seat_id", 0)),
-                        "fare": window_seat.get("fare", {})
-                    }
-                
-                # Add aisle seat if available
-                if recommendations[category]["aisle"]:
-                    aisle_seat = recommendations[category]["aisle"][0]
-                    json_bus["recommendations"][category_key]["aisle"] = {
-                        "seatNumber": str(aisle_seat.get("number", "")),
-                        "price": str(aisle_seat.get("price", "")),
-                        "seat_id": str(aisle_seat.get("seat_id", 0)),
-                        "fare": aisle_seat.get("fare", {})
-                    }
-                    
-            # For JSON output, fetch all boarding and dropping points
-            if return_json:
-                # Initialize HTTP session if needed
-                if not self.http_session:
-                    await self.init_http_session()
-                
-                # Initialize boarding and dropping point containers
-                boarding_points = []
-                dropping_points = []
-                
-                # Fetch boarding points
-                try:
-                    boarding_url = f"{self.BASE_URL}/trips/{trip_id}/boardings/{source_id}"
-                    print(f"Fetching all boarding points: {boarding_url}")
-                    
-                    async with self.http_session.get(boarding_url) as response:
-                        if response.status == 200:
-                            boarding_data = await response.json()
-                            # Format boarding points into a simplified structure
-                            if boarding_data and isinstance(boarding_data, list):
-                                for point in boarding_data:
-                                    if point:
-                                        bp_info = point.get('boardingPoint', {}) or {}
-                                        formatted_point = {
-                                            "name": bp_info.get('name', 'Unknown'),
-                                            "landmark": bp_info.get('landmark', ''),
-                                            "time": point.get('time', ''),
-                                            "latitude": bp_info.get('latitude'),
-                                            "longitude": bp_info.get('longitude'),
-                                            "address": bp_info.get('address', ''),
-                                            "id": bp_info.get('id', 100)  # Add ID for booking
-                                        }
-                                        boarding_points.append(formatted_point)
-                        else:
-                            print(f"Failed to fetch boarding points: Status {response.status}")
-                except Exception as e:
-                    print(f"Error fetching boarding points: {e}")
-                
-                # Fetch dropping points, filtering by destination_id
-                try:
-                    dropping_url = f"{self.BASE_URL}/trips/{trip_id}/droppings"
-                    print(f"Fetching all dropping points: {dropping_url}")
-                    
-                    async with self.http_session.get(dropping_url) as response:
-                        if response.status == 200:
-                            dropping_data = await response.json()
-                            # Format dropping points into a simplified structure, filtering by destination
-                            if dropping_data and isinstance(dropping_data, list):
-                                for point in dropping_data:
-                                    if point:
-                                        dp_info = point.get('droppingPoint', {}) or {}
-                                        
-                                        # Only include dropping points that match the destination_id
-                                        if destination_id and dp_info.get('stationId') != int(destination_id):
-                                            continue
-                                            
-                                        formatted_point = {
-                                            "name": dp_info.get('name', 'Unknown'),
-                                            "landmark": dp_info.get('landmark', ''),
-                                            "time": point.get('time', ''),
-                                            "latitude": dp_info.get('latitude'),
-                                            "longitude": dp_info.get('longitude'),
-                                            "address": dp_info.get('address', ''),
-                                            "id": dp_info.get('id', 120)  # Add ID for booking
-                                        }
-                                        dropping_points.append(formatted_point)
-                                
-                                print(f"Filtered dropping points for destination {destination_id}: {len(dropping_points)} points")
-                        else:
-                            print(f"Failed to fetch dropping points: Status {response.status}")
-                except Exception as e:
-                    print(f"Error fetching dropping points: {e}")
-                
-                # Add the boarding and dropping points to the JSON output
-                json_bus["all_boarding_points"] = boarding_points
-                json_bus["all_dropping_points"] = dropping_points
-                
-                # Add booking info to JSON
-                user_data = context.get('user', {}) or {}
-                selected_boarding_point_id = None
-                selected_dropping_point_id = None
-                
-                # Get default boarding/dropping point IDs
-                if boarding_points and len(boarding_points) > 0:
-                    selected_boarding_point_id = boarding_points[0].get('id', 100)
-                    
-                if dropping_points and len(dropping_points) > 0:
-                    selected_dropping_point_id = dropping_points[0].get('id', 120)
-                    
-                # Get the recommended seat for booking (reasonable window as default)
-                recommended_seat = None
-                seat_id = None
-                
-                reasonable_key = "reasonable"
-                if reasonable_key in json_bus["recommendations"]:
-                    rec_reasonable = json_bus["recommendations"][reasonable_key]
-                    if "window" in rec_reasonable and rec_reasonable["window"]:
-                        recommended_seat = rec_reasonable["window"]
-                        if "seat_id" in recommended_seat:
-                            seat_id = int(recommended_seat.get("seat_id", 0))
-                
-                # Add booking info
-                json_bus["booking_info"] = {
-                    "mobile": user_data.get('mobile', "9154227800"),
-                    "email": user_data.get('email', "user@example.com"),
-                    "seat_map": [
-                        {
-                            "passenger_age": 25,
-                            "seat_id": seat_id or 681775,
-                            "passenger_name": user_data.get('name', "Passenger"),
-                            "gender": context.get('gender', "Male") or "Male"
-                        }
-                    ],
-                    "trip_id": int(trip_id) if str(trip_id).isdigit() else 32692,
-                    "boarding_point_id": selected_boarding_point_id or 100,
-                    "dropping_point_id": selected_dropping_point_id or 120,
-                    "boarding_point_time": trip.get('boardingtime', "2025-04-11T23:20:00.000Z"),
-                    "dropping_point_time": trip.get('droppingtime', "2025-04-12T07:30:00.000Z"),
-                    "total_collect_amount": float(bus_data.get('fare', 0)),
-                    "main_category": 1,
-                    "freshcardId": 1,
-                    "freshcard": False,
-                    "return_url": "https://freshbus.com/booking-confirmation"
-                }
-            
-            # Add to JSON output
-            json_output["trips"].append(json_bus)
-            
-            # Format each bus as a separate section with proper markdown for text output
-            formatted_bus = f"🚌 {source} to {destination} | {bus_data.get('departure_time', 'Unknown')} - {bus_data.get('arrival_time', 'Unknown')} | {bus_data.get('vehicletype', 'AC Seater')} | {duration}\n"
-            formatted_bus += f"Price: ₹{bus_data.get('fare', 'Unknown')} | {bus_data.get('seats', 'Unknown')} seats | Rating: {bus_data.get('rating', 'Unknown')}/5\n"
-            formatted_bus += f"Boarding: {bus_data.get('boarding', 'Unknown')}\n"
-            formatted_bus += f"Dropping: {bus_data.get('dropping', 'Unknown')}\n"
-            formatted_bus += f"Recommended seats:\n"
+            msg = "I couldn’t find any buses that match your search."
+            return {"error":"no_trips","message":msg} if return_json else msg
 
-            # List of standard categories we always want to display (in order)
-            standard_categories = ["Reasonable", "Premium", "Budget-Friendly"]
+        # ── compute display date ─────────────────────────────
+        raw = context.get("last_date")
+        if raw:
+            try:
+                dt = datetime.fromisoformat(raw.replace("Z","+00:00"))
+                date_label = dt.strftime("%d %b %Y"); iso_date = dt.date().isoformat()
+            except:
+                date_label = iso_date = raw
+        else:
+            now_ist = datetime.now(timezone(timedelta(hours=5,minutes=30)))
+            tmw = now_ist + timedelta(days=1)
+            date_label = tmw.strftime("%d %b %Y"); iso_date = tmw.date().isoformat()
 
-            # Process each standard category
-            for i, category in enumerate(standard_categories):
-                formatted_bus += f"• **{category}**: "
-                
-                window_info = ""
-                aisle_info = ""
-                has_recommendations = False
-                
-                # Check if API provides data for this category
-                api_recommendations = api_data.get("recommendations", {}) or {}
-                category_recs = api_recommendations.get(category, {}) or {}
-                
-                if category_recs:
-                    # Get window seat recommendation if available
-                    window_recs = category_recs.get("window", [])
-                    if window_recs and len(window_recs) > 0 and isinstance(window_recs[0], dict):
-                        window_seat = window_recs[0].get("number", "")
-                        window_price = window_recs[0].get("price", "")
-                        if window_seat and window_price:
-                            window_info = f"Window {window_seat} (₹{window_price})"
-                            has_recommendations = True
-                    
-                    # Get aisle seat recommendation if available
-                    aisle_recs = category_recs.get("aisle", [])
-                    if aisle_recs and len(aisle_recs) > 0 and isinstance(aisle_recs[0], dict):
-                        aisle_seat = aisle_recs[0].get("number", "")
-                        aisle_price = aisle_recs[0].get("price", "")
-                        if aisle_seat and aisle_price:
-                            aisle_info = f"Aisle {aisle_seat} (₹{aisle_price})"
-                            has_recommendations = True
-                
-                # Use our generated recommendations if API data doesn't have them
-                if not has_recommendations and (recommendations[category]["window"] or recommendations[category]["aisle"]):
-                    if recommendations[category]["window"]:
-                        window_seats = recommendations[category]["window"]
-                        if window_seats and len(window_seats) > 0:
-                            window_seat = window_seats[0].get("number")
-                            window_price = window_seats[0].get("price")
-                            if window_seat and window_price:
-                                window_info = f"Window {window_seat} (₹{window_price})"
-                                has_recommendations = True
-                    
-                    if recommendations[category]["aisle"]:
-                        aisle_seats = recommendations[category]["aisle"]
-                        if aisle_seats and len(aisle_seats) > 0:
-                            aisle_seat = aisle_seats[0].get("number")
-                            aisle_price = aisle_seats[0].get("price")
-                            if aisle_seat and aisle_price:
-                                aisle_info = f"Aisle {aisle_seat} (₹{aisle_price})"
-                                has_recommendations = True
-                
-                # Add the seat information if available, otherwise indicate no data
-                if has_recommendations:
-                    if window_info:
-                        formatted_bus += window_info
-                        if aisle_info:
-                            formatted_bus += ", "
-                    if aisle_info:
-                        formatted_bus += aisle_info
-                else:
-                    formatted_bus += "No seats available"
-                
-                # Add newline if not the last category
-                if i < len(standard_categories) - 1:
-                    formatted_bus += "\n"
-            
-            formatted_buses.append(formatted_bus)
-        
-        # Return JSON if requested
+        # ── header ───────────────────────────────────────────
+        src = context.get("user_requested_source", trips[0]["source"])
+        dst = context.get("user_requested_destination", trips[0]["destination"])
+        header = f"I found {len(trips)} bus{'es' if len(trips)>1 else ''} from {src} to {dst} on {date_label}:\n\n"
+
+        # ── IST formatter ───────────────────────────────────
+        def ist(ts):
+            try:
+                d = datetime.fromisoformat(ts.replace("Z","+00:00"))
+                return d.astimezone(timezone(timedelta(hours=5,minutes=30))).strftime("%I:%M %p").lstrip("0")
+            except:
+                return "—"
+
+        # ── detect API recs ─────────────────────────────────
+        def has_api_recs(r):
+            return any(
+                r.get(cat,{}).get(pos)
+                for cat in ("Premium","Reasonable","Budget-Friendly")
+                for pos in ("window","aisle")
+            )
+
+        api_recs = api_data.get("recommendations", {})
+        trips_text, trips_json = [], []
+
+        for t in trips:
+            dep = ist(t["boardingtime"]); arr = ist(t["droppingtime"])
+            # duration
+            dur = ""
+            try:
+                a = datetime.fromisoformat(t["boardingtime"].replace("Z","+00:00"))
+                b = datetime.fromisoformat(t["droppingtime"].replace("Z","+00:00"))
+                m = int((b-a).total_seconds()//60); dur = f"{m//60}h {m%60}m"
+            except:
+                pass
+
+            # ── build recs blob ─────────────────────────────
+            if has_api_recs(api_recs):
+                recs = api_recs
+            else:
+                sd = await self.fetch_seats(t["tripid"],
+                                            context.get("source_id"),
+                                            context.get("destination_id")) or {}
+                recs = {c:{"window":[],"aisle":[]} for c in ("Premium","Reasonable","Budget-Friendly")}
+                for s in sd.get("seats", []):
+                    num   = s.get("seatName") or s.get("number")
+                    sid   = s.get("seat_id")  or s.get("seatId")
+                    base  = s.get("baseFare", 0)
+                    gst   = s.get("gst", 0)
+                    disc  = s.get("discount", 0)
+                    gross = base + gst + disc
+                    cat   = s.get("category","Reasonable")
+                    pos   = "window" if num in self.window_seats else "aisle"
+                    if num is not None and sid:
+                        recs.setdefault(cat,{"window":[],"aisle":[]})
+                        recs[cat][pos].append({
+                            "seatNumber": str(num),
+                            "seatId":     sid,
+                            "price":      str(gross),
+                            "fare": {
+                                "Base Fare": base,
+                                "GST":        gst,
+                                "Discount":   disc
+                            }
+                        })
+
+            # ── bullets & JSON recs ────────────────────────
+            bullets, json_recs = [], {}
+            for disp, cat in [("Premium","Premium"),
+                              ("Reasonable","Reasonable"),
+                              ("Budget‑Friendly","Budget-Friendly")]:
+                wins = recs.get(cat,{}).get("window", [])
+                ails = recs.get(cat,{}).get("aisle",  [])
+                key  = disp.lower().replace("‑","_").replace("-","_")
+                json_recs[key] = {"window": {}, "aisle": {}}
+
+                parts = []
+                if wins:
+                    w  = wins[0]
+                    sn = w.get("seatNumber") or w.get("number","")
+                    sp = w.get("price")      or ""
+                    parts.append(f"Window {sn} (₹{sp})")
+                    json_recs[key]["window"] = w
+                if ails:
+                    a  = ails[0]
+                    sn = a.get("seatNumber") or a.get("number","")
+                    sp = a.get("price")      or ""
+                    parts.append(f"Aisle {sn} (₹{sp})")
+                    json_recs[key]["aisle"]  = a
+
+                if parts:
+                    bullets.append(f"• **{disp}**: {', '.join(parts)}")
+
+            # ── assemble text ─────────────────────────────
+            trips_text.append(
+                f"🚌 {src} → {dst} | {dep} - {arr} | {t.get('vehicletype','')} | {dur} "
+                f"Price: ₹{t['fare']} | {t['availableseats']} seats | Rating {t['redbusrating']}/5\n"
+                f"Boarding Points: {api_data.get('boarding_points',[])}\n"
+                f"Dropping Points: {api_data.get('dropping_points',[])}\n"
+                f"Recommended seats: {'  '.join(bullets)}"
+            )
+
+            # ── assemble JSON ─────────────────────────────
+            trips_json.append({
+                "journeyDate":     iso_date,
+                "busNumber":       t["servicenumber"],
+                "price":           str(t["fare"]),
+                "seats":           str(t["availableseats"]),
+                "rating":          str(t["redbusrating"]),
+                "from":            src,
+                "to":              dst,
+                "boardingPoints":  api_data.get("boarding_points", []),
+                "droppingPoints":  api_data.get("dropping_points", []),
+                "departureTime":   dep,
+                "arrivalTime":     arr,
+                "duration":        dur,
+                "tripId":          str(t["tripid"]),
+                "busType":         t["vehicletype"],
+                "recommendations": json_recs
+            })
+
         if return_json:
-            return json_output
-        
-        # Otherwise return text format
-        return header + "\n\n".join(formatted_buses)
-    
+            return {"trips": trips_json}
+
+        return (
+            header
+            + "\n\n".join(trips_text)
+            + "\n```json\n"
+            + json.dumps({"trips": trips_json}, indent=2)
+            + "\n```"
+        )
+
+
     def generate_direct_bus_response_sync(self, api_data, context, return_json=False):
-        """Synchronous wrapper for the async generate_direct_bus_response method"""
         import asyncio
-        
-        # Get or create event loop
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:
-            # If there's no event loop in this thread, create one
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-        
-        # Run the async method in the event loop and return its result
-        return loop.run_until_complete(self.generate_direct_bus_response(api_data, context, return_json))
+        return loop.run_until_complete(
+            self.generate_direct_bus_response(api_data, context, return_json=return_json)
+        )
 
     # Generate JSON response for bus data
     def generate_json_bus_response(self, api_data, context):
@@ -2369,42 +2232,60 @@ class FreshBusAssistant:
         return "\n\n".join(formatted_buses)
     
     def get_or_create_session(self, session_id):
-        if not session_id:
-            session_id = str(uuid.uuid4())
-        
-        if session_id not in self.sessions:
-            # Try to get messages from Redis first if available
-            messages = []
-            try:
-                if hasattr(self, 'redis_session_manager'):
-                    messages = self.redis_session_manager.get_messages(session_id)
-                    print(f"Retrieved {len(messages)} messages from Redis for session {session_id}")
-            except Exception as e:
-                print(f"Error retrieving messages from Redis: {e}")
+        try:
+            # Create a new session ID if none provided
+            if not session_id:
+                session_id = str(uuid.uuid4())
+                print(f"Created new session ID: {session_id}")
             
-            # If no messages in Redis, initialize with empty list
-            self.sessions[session_id] = {
-                "messages": messages or [],
-                "last_updated": datetime.now(),
-                "context": {
-                    "last_source": None,
-                    "last_destination": None,
-                    "last_date": None,
-                    "last_boarding_point": None,
-                    "last_dropping_point": None,
-                    "ticket_count": 1,
-                    "selected_bus": None,
-                    "selected_seats": [],
-                    "user_location": None,
-                    "language": "english",
-                    "user_requested_source": None,
-                    "user_requested_destination": None,
-                    "auth": None,
-                    "user": None,
-                    "user_profile": None
+            # Check if session exists
+            if session_id not in self.sessions:
+                print(f"Creating new session with ID: {session_id}")
+                # Create a new session with all required fields
+                self.sessions[session_id] = {
+                    "messages": [],
+                    "last_updated": datetime.now(),
+                    "context": {
+                        "last_source": None,
+                        "last_destination": None,
+                        "last_date": None,
+                        "last_boarding_point": None,
+                        "last_dropping_point": None,
+                        "ticket_count": 1,
+                        "selected_bus": None,
+                        "selected_seats": [],
+                        "user_location": None,
+                        "language": "english",
+                        "user_requested_source": None,
+                        "user_requested_destination": None,
+                        "auth": None,
+                        "user": None,
+                        "user_profile": None
+                    }
                 }
+            else:
+                print(f"Using existing session with ID: {session_id}")
+                # Ensure existing session has all required fields
+                if "context" not in self.sessions[session_id] or self.sessions[session_id]["context"] is None:
+                    print(f"Fixing missing context in session {session_id}")
+                    self.sessions[session_id]["context"] = {}
+                
+                if "messages" not in self.sessions[session_id] or self.sessions[session_id]["messages"] is None:
+                    print(f"Fixing missing messages in session {session_id}")
+                    self.sessions[session_id]["messages"] = []
+            
+            return self.sessions[session_id], session_id
+        except Exception as e:
+            print(f"Error in get_or_create_session: {e}")
+            # Create a fallback session
+            fallback_session_id = str(uuid.uuid4())
+            fallback_session = {
+                "messages": [],
+                "last_updated": datetime.now(),
+                "context": {}
             }
-        return self.sessions[session_id], session_id
+            self.sessions[fallback_session_id] = fallback_session
+            return fallback_session, fallback_session_id
     
     def extract_locations(self, query):
         query_lower = query.lower()
@@ -2434,17 +2315,28 @@ class FreshBusAssistant:
             match = re.search(pattern, query_lower)
             if match:
                 src, dst = match.groups()
+                # Find best matching station keys
+                best_src_match = None
+                best_dst_match = None
+                # Find exact or partial matches
                 for city in self.stations.keys():
-                    if src in city or city in src:
-                        src = city
-                    if dst in city or city in dst:
-                        dst = city
-                if src in self.stations.keys() and dst in self.stations.keys():
-                    print(f"Extracted from pattern: FROM {src} TO {dst}")
-                    return src, dst
+                    if src == city or src in city or city in src:
+                        if best_src_match is None or len(city) < len(best_src_match):
+                            best_src_match = city
+                    if dst == city or dst in city or city in dst:
+                        if best_dst_match is None or len(city) < len(best_dst_match):
+                            best_dst_match = city
+                
+                if best_src_match and best_dst_match:
+                    print(f"Extracted from pattern: FROM {best_src_match} TO {best_dst_match}")
+                    return best_src_match, best_dst_match
                     
         # Check for cities mentioned
-        cities_mentioned = [city for city in self.stations.keys() if city in query_lower]
+        cities_mentioned = []
+        for city in self.stations.keys():
+            if city in query_lower:
+                cities_mentioned.append(city)
+        
         if len(cities_mentioned) == 2:
             # If "from" is before the first city, use cities in order mentioned
             if "from" in query_lower and query_lower.find("from") < query_lower.find(cities_mentioned[0]):
@@ -2685,6 +2577,7 @@ class FreshBusAssistant:
         return seats, window_preference, aisle_preference
     
     async def fetch_trips(self, source_id, destination_id, journey_date):
+        """Fetch trips with proper error handling."""
         if not self.http_session:
             await self.init_http_session()
         
@@ -2693,46 +2586,67 @@ class FreshBusAssistant:
             journey_date = datetime.now().strftime("%Y-%m-%d")
             print(f"Using default date: {journey_date}")
         
+        # Debug
+        print(f"Fetching trips for route: source_id={source_id}, destination_id={destination_id}, date={journey_date}")
+        
         url = f"{self.BASE_URL}/trips?journey_date={journey_date}&source_id={source_id}&destination_id={destination_id}"
-        print(f"Fetching trips: {url}")
+        print(f"Fetching trips from URL: {url}")
+        
+        try:
+            headers = {"Content-Type": "application/json"}
+            async with self.http_session.get(url, headers=headers) as response:
+                print(f"Got response status: {response.status}")
+                if response.status == 200:
+                    response_text = await response.text()
+                    print(f"Got response: {response_text[:200]}...")  # Print first 200 chars
+                    
+                    try:
+                        data = json.loads(response_text)
+                        if data:
+                            print(f"Successfully fetched {len(data)} trips")
+                            return self.deduplicate_trips(data)
+                        else:
+                            print("API returned empty response (no trips found)")
+                            return []
+                    except json.JSONDecodeError as e:
+                        print(f"JSON decode error: {e}")
+                        print(f"Response content: {response_text[:500]}")
+                        return []
+                else:
+                    error_text = await response.text()
+                    print(f"Error fetching trips: {response.status}, response: {error_text}")
+                    return []
+        except Exception as e:
+            print(f"Exception fetching trips: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+    
+    async def fetch_boarding_points(self, trip_id, source_id):
+        """Fetch boarding points for a specific trip."""
+        if not self.http_session:
+            await self.init_http_session()
+        
+        url = f"{self.BASE_URL}/trips/{trip_id}/boardings/{source_id}"
+        print(f"Fetching boarding points: {url}")
         
         try:
             async with self.http_session.get(url) as response:
                 if response.status == 200:
-                    data = await response.json()
-                    
-                    if data:
-                        print(f"Successfully fetched {len(data)} trips")
-                        return self.deduplicate_trips(data)
-                    else:
-                        print("API returned empty response")
-                        return []
-                else:
-                    print(f"Error fetching trips: {response.status}")
-                    # Properly handle API errors without inventing data
-                    return []
-        except Exception as e:
-            print(f"Exception fetching trips: {e}")
-            return []
-    
-    async def fetch_boarding_points(self, trip_id, source_id):
-        if not self.http_session:
-            await self.init_http_session()
-        url = f"{self.BASE_URL}/trips/{trip_id}/boardings/{source_id}"
-        print(f"Fetching boarding points: {url}")
-        try:
-            async with self.http_session.get(url) as response:
-                if response.status == 200:
-                    return await response.json()
+                    boarding_points = await response.json()
+                    print(f"Successfully fetched {len(boarding_points)} boarding points")
+                    return boarding_points
                 else:
                     print(f"Error fetching boarding points: {response.status}")
+                    error_text = await response.text()
+                    print(f"Error response: {error_text}")
                     return []
         except Exception as e:
             print(f"Exception fetching boarding points: {e}")
             return []
     
     async def fetch_dropping_points(self, trip_id, destination_id=None):
-        """Fetch dropping points for a specific trip, filtered by destination if provided"""
+        """Fetch dropping points for a specific trip, filtered by destination if provided."""
         if not self.http_session:
             await self.init_http_session()
         
@@ -2746,9 +2660,13 @@ class FreshBusAssistant:
                     
                     # Filter dropping points by destination_id if provided
                     if destination_id and all_dropping_points:
+                        # Try to convert to int if it's a string
+                        if isinstance(destination_id, str) and destination_id.isdigit():
+                            destination_id = int(destination_id)
+                        
                         filtered_dropping_points = [
                             point for point in all_dropping_points 
-                            if point.get('droppingPoint', {}).get('stationId') == int(destination_id)
+                            if point.get('droppingPoint', {}).get('stationId') == destination_id
                         ]
                         
                         # Only return filtered points if we found some, otherwise return all
@@ -2761,26 +2679,48 @@ class FreshBusAssistant:
                     return all_dropping_points
                 else:
                     print(f"Error fetching dropping points: {response.status}")
+                    error_text = await response.text()
+                    print(f"Error response: {error_text}")
                     return []
         except Exception as e:
             print(f"Exception fetching dropping points: {e}")
             return []
     
     async def fetch_seats(self, trip_id, source_id, destination_id):
+        """Fetch seat availability for a specific trip."""
         if not self.http_session:
             await self.init_http_session()
+        
         url = f"{self.BASE_URL}/trips/{trip_id}/seats?source_id={source_id}&destination_id={destination_id}"
-        print(f"Fetching seats: {url}")
+        print(f"Fetching seats from: {url}")
+        
         try:
             async with self.http_session.get(url) as response:
-                if response.status == 200:  # Fixed the unmatched parenthesis here
-                    return await response.json()
+                if response.status == 200:
+                    try:
+                        data = await response.json()
+                        print(f"Received seat data with keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dictionary'}")
+                        
+                        # Return the data as-is
+                        return data
+                    except Exception as json_error:
+                        print(f"Error parsing seat JSON: {json_error}")
+                        error_text = await response.text()
+                        print(f"Raw response: {error_text[:500]}")  # First 500 chars for debugging
+                        return {"seats": []}
                 else:
-                    print(f"Error fetching seats: {response.status}")
-                    return {}
+                    print(f"Error fetching seats: Status {response.status}")
+                    try:
+                        error_text = await response.text()
+                        print(f"Error response: {error_text[:500]}")  # First 500 chars for debugging
+                    except:
+                        print("Could not read error response text")
+                    return {"seats": []}
         except Exception as e:
             print(f"Exception fetching seats: {e}")
-            return {}
+            import traceback
+            traceback.print_exc()
+            return {"seats": []}
     
     def find_nearest_boarding_points(self, boarding_points, user_location, max_points=3):
         if not user_location or not boarding_points:
@@ -2855,7 +2795,7 @@ class FreshBusAssistant:
             })
         return nearest_info
     
-    async def fetch_user_preferences(self, mobile, auth_token=None):
+    async def fetch_user_preferences(self, mobile, access_token=None):
         """Fetch user seat preferences and booking history if available"""
         if not self.http_session:
             await self.init_http_session()
@@ -2872,8 +2812,8 @@ class FreshBusAssistant:
             # Simulate fetching user's booking history
             # In a real implementation, you'd call the actual API endpoint
             headers = {}
-            if auth_token:
-                headers["Authorization"] = f"Bearer {auth_token}"
+            if access_token:
+                headers["Authorization"] = f"Bearer {access_token}"
                 
             # Example of how to fetch user data with auth token
             # url = f"{self.BASE_URL}/users/{mobile}/bookings"
@@ -2911,174 +2851,201 @@ class FreshBusAssistant:
             return {}
     
     async def get_seat_recommendations(self, *args):
-        """Get seat recommendations based purely on price tiers
-        
-        This function can be called in two ways:
-        1. get_seat_recommendations(trip_id, source_id, destination_id)
-        2. get_seat_recommendations(seats_data, ticket_count, user_preferences)
         """
-        # Determine which calling pattern is being used
-        if len(args) == 3 and isinstance(args[0], str):
-            # First pattern: (trip_id, source_id, destination_id)
-            trip_id, source_id, destination_id = args
-            seat_data = await self.fetch_seats(trip_id, source_id, destination_id)
-        else:
-            # Second pattern: (seats_data, ticket_count, user_preferences)
-            seat_data = args[0]  # seats_data is the first argument
-        
-        # Initialize category containers
-        categories = {
-            "Premium": {"window": [], "aisle": []},
-            "Reasonable": {"window": [], "aisle": []},
-            "Budget-Friendly": {"window": [], "aisle": []}
+        Build seat recommendations grouped by price tiers.
+
+        Call patterns
+        --------------
+        1. get_seat_recommendations(trip_id, source_id, destination_id)
+        – the three IDs may be str **or** int.
+
+        2. get_seat_recommendations(seats_data_dict, ticket_count=?, user_preferences=?)
+        – pass a seats‑payload you already fetched.
+
+        Returns
+        -------
+        {
+            "Premium":         {"window": [ {...}, ... ], "aisle": [ {...}, ... ]},
+            "Reasonable":      {"window": [ {...}, ... ], "aisle": [ {...}, ... ]},
+            "Budget-Friendly": {"window": [ {...}, ... ], "aisle": [ {...}, ... ]}
         }
-        
-        # Filter available seats
-        available_seats = [seat for seat in seat_data.get('seats', []) 
-                        if not seat.get('isOccupied', False) and 
-                        seat.get('availabilityStatus', '') in ['A', 'M', 'F']]
-        
-        # Extract all prices for available seats
-        prices = [float(seat.get('totalFare', 0)) for seat in available_seats]
-        if not prices:
-            return categories
-        
-        # Calculate price thresholds - use 33% for clear separation between categories
-        min_price = min(prices)
-        max_price = max(prices)
-        price_range = max_price - min_price
-        
-        # Define thresholds with minimum difference to handle small price ranges
-        budget_threshold = min_price + (price_range * 0.33) if price_range > 10 else min_price + 50
-        premium_threshold = max_price - (price_range * 0.33) if price_range > 10 else max_price - 50
-        
-        # Create separate window and aisle seat lists
-        window_seats = []
-        aisle_seats = []
-        
-        # Track all assigned seats to prevent duplication
-        assigned_seats = set()
-        
-        for seat in available_seats:
-            try:
-                seat_number = int(seat.get('seatName', '0'))
-                price = float(seat.get('totalFare', 0))
-                
-                # Skip invalid seats
-                if seat_number <= 0:
+        """
+        # ---------------------------------------------------------------
+        # Empty containers
+        # ---------------------------------------------------------------
+        categories = {
+            "Premium":         {"window": [], "aisle": []},
+            "Reasonable":      {"window": [], "aisle": []},
+            "Budget-Friendly": {"window": [], "aisle": []},
+        }
+
+        try:
+            # -----------------------------------------------------------
+            # Detect which signature we received
+            # -----------------------------------------------------------
+            seat_data = None
+
+            # ── pattern 1: (trip_id, source_id, destination_id) ─────────
+            if len(args) == 3 and isinstance(args[0], (str, int)):
+                trip_id, source_id, destination_id = map(str, args)
+                print(
+                    f"Fetching seat recommendations for trip {trip_id} "
+                    f"from {source_id} to {destination_id}"
+                )
+                seat_data = await self.fetch_seats(trip_id, source_id, destination_id)
+
+            # ── pattern 2: first argument is a seats‑payload dict ───────
+            elif args and isinstance(args[0], dict):
+                seat_data = args[0]
+
+            # Unsupported signature – bail out early
+            else:
+                print(
+                    f"get_seat_recommendations called with unsupported args: "
+                    f"{[type(a) for a in args]}"
+                )
+                return categories
+
+            # -----------------------------------------------------------
+            # Validate / locate the "seats" list
+            # -----------------------------------------------------------
+            if not seat_data or not isinstance(seat_data, dict):
+                print("Seat payload is empty or not a dict")
+                return categories
+
+            if not isinstance(seat_data.get("seats"), list):
+                # Try to salvage if some other key contains the list
+                for k, v in seat_data.items():
+                    if isinstance(v, list) and k.lower().find("seat") >= 0:
+                        seat_data["seats"] = v
+                        break
+
+            seats_array = seat_data.get("seats", [])
+            if not isinstance(seats_array, list) or not seats_array:
+                print("No seat list found in payload")
+                return categories
+
+            # -----------------------------------------------------------
+            # Build list of available seats with number + price
+            # -----------------------------------------------------------
+            available_seats = []
+            for seat in seats_array:
+                if not isinstance(seat, dict):
                     continue
-                
-                seat_data = {
-                    "number": seat_number,
-                    "price": price
+
+                occupied = (
+                    seat.get("isOccupied", False)
+                    or seat.get("occupied", False)
+                    or seat.get("status", "").lower() == "occupied"
+                    or seat.get("available", True) is False
+                )
+                status_ok = seat.get("availabilityStatus", "A") in {
+                    "A", "M", "F", "Available", "available"
                 }
-                
-                # Categorize by position
-                if seat_number in self.window_seats:
-                    window_seats.append(seat_data)
-                elif seat_number in self.aisle_seats:
-                    aisle_seats.append(seat_data)
-            except (ValueError, TypeError):
-                continue
-        
-        # Sort both lists by price
-        window_seats.sort(key=lambda s: s["price"])
-        aisle_seats.sort(key=lambda s: s["price"])
-        
-        # Distribute window seats into categories based on price
-        for seat in window_seats:
-            if seat["number"] in assigned_seats:
-                continue
-                
-            price = seat["price"]
-            if price <= budget_threshold:
-                categories["Budget-Friendly"]["window"].append(seat)
-            elif price >= premium_threshold:
-                categories["Premium"]["window"].append(seat)
-            else:
-                categories["Reasonable"]["window"].append(seat)
-                
-            assigned_seats.add(seat["number"])
-        
-        # Distribute aisle seats into categories based on price
-        for seat in aisle_seats:
-            if seat["number"] in assigned_seats:
-                continue
-                
-            price = seat["price"]
-            if price <= budget_threshold:
-                categories["Budget-Friendly"]["aisle"].append(seat)
-            elif price >= premium_threshold:
-                categories["Premium"]["aisle"].append(seat)
-            else:
-                categories["Reasonable"]["aisle"].append(seat)
-                
-            assigned_seats.add(seat["number"])
-        
-        # Ensure each category has at least one seat of each type if possible
-        # Only if a category is completely empty, try to borrow from middle category
-        
-        # For window seats
-        if not categories["Budget-Friendly"]["window"] and categories["Reasonable"]["window"]:
-            # For Budget-Friendly, choose the cheapest seat from Reasonable
-            seat_to_move = min(categories["Reasonable"]["window"], key=lambda s: s["price"])
-            categories["Budget-Friendly"]["window"].append(seat_to_move)
-            # Remove from Reasonable
-            categories["Reasonable"]["window"] = [
-                s for s in categories["Reasonable"]["window"] 
-                if s["number"] != seat_to_move["number"]
-            ]
-        
-        # For Premium, if empty, move most expensive seat from Reasonable
-        if not categories["Premium"]["window"] and categories["Reasonable"]["window"]:
-            seat_to_move = max(categories["Reasonable"]["window"], key=lambda s: s["price"])
-            categories["Premium"]["window"].append(seat_to_move)
-            # Remove from Reasonable
-            categories["Reasonable"]["window"] = [
-                s for s in categories["Reasonable"]["window"] 
-                if s["number"] != seat_to_move["number"]
-            ]
-        
-        # Same for aisle seats
-        if not categories["Budget-Friendly"]["aisle"] and categories["Reasonable"]["aisle"]:
-            seat_to_move = min(categories["Reasonable"]["aisle"], key=lambda s: s["price"])
-            categories["Budget-Friendly"]["aisle"].append(seat_to_move)
-            # Remove from Reasonable
-            categories["Reasonable"]["aisle"] = [
-                s for s in categories["Reasonable"]["aisle"] 
-                if s["number"] != seat_to_move["number"]
-            ]
-        
-        if not categories["Premium"]["aisle"] and categories["Reasonable"]["aisle"]:
-            seat_to_move = max(categories["Reasonable"]["aisle"], key=lambda s: s["price"])
-            categories["Premium"]["aisle"].append(seat_to_move)
-            # Remove from Reasonable
-            categories["Reasonable"]["aisle"] = [
-                s for s in categories["Reasonable"]["aisle"] 
-                if s["number"] != seat_to_move["number"]
-            ]
-        
-        # Final verification step to ensure no duplicates
-        seen_seats = {}
-        for category in categories:
-            for position in ["window", "aisle"]:
-                unique_seats = []
-                for seat in categories[category][position]:
-                    seat_num = seat["number"]
-                    if seat_num not in seen_seats:
-                        seen_seats[seat_num] = f"{category}-{position}"
-                        unique_seats.append(seat)
-                    else:
-                        print(f"Preventing duplicate: Seat {seat_num} already in {seen_seats[seat_num]}")
-                categories[category][position] = unique_seats
-        
-        # Limit each category to a reasonable number of recommendations
-        max_recommendations = 3
-        for category in categories:
-            for position in ["window", "aisle"]:
-                categories[category][position] = categories[category][position][:max_recommendations]
-        
-        return categories
+                if occupied or not status_ok:
+                    continue
+
+                # Seat number (first field that parses to int)
+                seat_num = None
+                for key in ("seatName", "name", "number", "seatNumber", "seat_number", "id"):
+                    if key in seat and seat[key]:
+                        try:
+                            seat_num = int(str(seat[key]).strip())
+                            break
+                        except (ValueError, TypeError):
+                            continue
+                if not seat_num or seat_num <= 0:
+                    continue
+
+                # Price (first field that converts to float)
+                price_val = None
+                for key in (
+                    "totalFare", "fare", "price", "seatFare",
+                    "seat_fare", "cost", "amount"
+                ):
+                    if key not in seat or not seat[key]:
+                        continue
+                    raw = seat[key]
+                    try:
+                        if isinstance(raw, dict):
+                            # dig for numeric inside dict
+                            for sub in ("amount", "value", "total", "fare"):
+                                if sub in raw and raw[sub]:
+                                    price_val = float(raw[sub])
+                                    break
+                        else:
+                            price_val = float(raw)
+                    except (ValueError, TypeError):
+                        pass
+                    if price_val is not None:
+                        break
+                if price_val is None:
+                    continue
+
+                available_seats.append(
+                    {
+                        "number": seat_num,
+                        "price": price_val,
+                        "seat_id": seat.get("id", seat_num),
+                        "fare": seat.get("fare", price_val),
+                    }
+                )
+
+            if not available_seats:
+                return categories
+
+            # -----------------------------------------------------------
+            # Determine thresholds
+            # -----------------------------------------------------------
+            prices = [s["price"] for s in available_seats]
+            min_price, max_price = min(prices), max(prices)
+            price_range = max_price - min_price
+            budget_thr  = min_price + price_range * 0.33 if price_range else min_price + 50
+            premium_thr = max_price - price_range * 0.33 if price_range else max_price - 50
+
+            # -----------------------------------------------------------
+            # Split by window / aisle and price buckets
+            # -----------------------------------------------------------
+            window, aisle = [], []
+            for seat in available_seats:
+                if seat["number"] in self.window_seats:
+                    window.append(seat)
+                elif seat["number"] in self.aisle_seats:
+                    aisle.append(seat)
+
+            window.sort(key=lambda s: s["price"])
+            aisle.sort(key=lambda s: s["price"])
+
+            def bucket(seat):
+                if seat["price"] <= budget_thr:
+                    return "Budget-Friendly"
+                if seat["price"] >= premium_thr:
+                    return "Premium"
+                return "Reasonable"
+
+            used = set()
+            for seat in window + aisle:
+                if seat["number"] in used:
+                    continue
+                used.add(seat["number"])
+                pos = "window" if seat in window else "aisle"
+                categories[bucket(seat)][pos].append(seat)
+
+            # -----------------------------------------------------------
+            # Trim to three per list
+            # -----------------------------------------------------------
+            for cat in categories.values():
+                cat["window"] = cat["window"][:3]
+                cat["aisle"]  = cat["aisle"][:3]
+
+            return categories
+
+        except Exception as err:
+            print(f"Error in get_seat_recommendations: {err}")
+            import traceback
+            traceback.print_exc()
+            return categories
+
     
     def _build_direct_context_from_api_data(self, api_data, query, context):
         if not api_data:
@@ -4087,21 +4054,62 @@ class FreshBusAssistant:
         
         return result
     
-    async def generate_response(self, query, session_id=None, user_gender=None, user_location=None, detected_language=None, provider=None, model=None):
+    async def generate_response(self, query, session_id=None, user_gender=None, user_location=None, detected_language=None, provider=None, model=None, **kwargs):
         """Generate a response to a user query"""
         print(f"\n--- New Query: '{query}' ---")
-        session, session_id = self.get_or_create_session(session_id)
-        context = session['context']
+        
+        # Initialize refresh_token to None at the beginning
+        refresh_token = None
+        
+        # Create a valid session first - fixed to handle None properly
+        try:
+            session, session_id = self.get_or_create_session(session_id)
+        except Exception as e:
+            print(f"Error creating session: {e}")
+            # Create a fallback session if there's an error
+            session = {
+                "messages": [],
+                "last_updated": datetime.now(),
+                "context": {}
+            }
+            session_id = str(uuid.uuid4())
+            print(f"Created fallback session ID: {session_id}")
+        
+        # CRITICAL FIX: Make sure session is not None
+        if not session:
+            print("Session is None, creating a new one")
+            session = {
+                "messages": [],
+                "last_updated": datetime.now(),
+                "context": {}
+            }
+        
+        # Make sure context exists
+        if "context" not in session:
+            print("Adding missing context to session")
+            session["context"] = {}
+        elif session["context"] is None:
+            print("Context is None, initializing as empty dict")
+            session["context"] = {}
+        
+        context = session["context"]
+        
+        # Get user mobile safely - this was causing the error
+        user_mobile = None
+        if isinstance(context.get('user'), dict):
+            user_mobile = context['user'].get('mobile')
         
         # Print session info for debugging
         print(f"Session ID: {session_id}")
         if session_id in self.sessions:
-            print(f"Current session messages count: {len(self.sessions[session_id]['messages'])}")
-            for i, msg in enumerate(self.sessions[session_id]['messages'][-5:]):  # Show last 5 messages
-                print(f"Message {i}: {msg['role']} - {msg['content'][:30]}...")
+            print(f"Current session messages count: {len(session.get('messages', []))}")
+            messages_to_show = min(5, len(session.get('messages', [])))
+            for i, msg in enumerate(session.get('messages', [])[-messages_to_show:]):  # Show last 5 messages
+                if isinstance(msg, dict) and 'role' in msg and 'content' in msg:
+                    print(f"Message {i}: {msg['role']} - {msg['content'][:30]}...")
         
         # Determine if this is a simple query that shouldn't use fallback
-        is_simple_query = query.lower() in ["hi", "hello", "hey"] or "name" in query.lower() or "who are you" in query.lower()
+        is_simple_query = self.is_simple_query(query)
         print(f"Is simple query: {is_simple_query}")
         
         # Temporary provider switch if requested
@@ -4134,16 +4142,87 @@ class FreshBusAssistant:
         # Check if user is authenticated
         user_authenticated = False
         user_data = None
-        user_mobile = None
-        auth_token = None
+        access_token = None
         user_id = None
         
-        if context.get('auth') and context.get('user'):
+        # Verify token validity and refresh if needed
+        # ——————————————————————————————
+        # VERIFY / REFRESH TOKENS
+        # ——————————————————————————————
+
+        # 1. If request contained no refresh_token, fall back to session
+        session_auth = session.get("context", {}).get("auth", {}) or {}
+        if not refresh_token and session_auth.get("refresh_token"):
+            refresh_token = session_auth["refresh_token"]
+            print(f"Found refresh token in session: {refresh_token[:10]}...")
+
+        token_valid = False
+        if access_token:
+            try:
+                # Pass BOTH tokens into our helper now
+                profile_data = await fresh_bus_assistant.fetch_user_profile(
+                    access_token,
+                    refresh_token
+                )
+                if profile_data:
+                    print("✅ Token verification successful!")
+                    token_valid = True
+
+                    # Populate user context
+                    if not user_id and profile_data.get("id"):
+                        user_id = profile_data["id"]
+                    session["context"]["user"] = {
+                        "id": profile_data.get("id"),
+                        "name": profile_data.get("name"),
+                        "mobile": profile_data.get("mobile"),
+                        "email": profile_data.get("email")
+                    }
+                else:
+                    print("❌ Token verification failed, will attempt refresh")
+                    token_valid = False
+            except Exception as e:
+                print(f"Error verifying token: {e}")
+                token_valid = False
+
+        # If token is invalid and we have a refresh token, try to refresh
+        if not token_valid and refresh_token:
+            print("Token is invalid. Attempting to refresh...")
+            try:
+                # Call the refresh token API
+                refresh_url = f"{fresh_bus_assistant.BASE_URL}/auth/refresh"
+                
+                async with fresh_bus_assistant.http_session.post(
+                    refresh_url,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {refresh_token}"
+                    },
+                    json={"refresh_token": refresh_token}
+                ) as refresh_response:
+                    if refresh_response.status == 200:
+                        refresh_data = await refresh_response.json()
+                        new_access_token = refresh_data.get("access_token")
+                        
+                        if new_access_token:
+                            print(f"Token refreshed successfully! New token: {new_access_token[:10]}...")
+                            access_token = new_access_token
+                            token_valid = True
+                            
+                            # Update session with new token
+                            session["context"]["auth"]["token"] = new_access_token
+                            if refresh_data.get("refresh_token"):
+                                session["context"]["auth"]["refresh_token"] = refresh_data.get("refresh_token")
+                    else:
+                        print(f"Failed to refresh token: {refresh_response.status}")
+            except Exception as refresh_error:
+                print(f"Error refreshing token: {refresh_error}")
+                
+        if token_valid and session.get("context", {}).get("auth", {}).get("token"):
             user_authenticated = True
             user_data = context['user']
             user_mobile = user_data.get('mobile')
             user_id = user_data.get('id')  # Get user ID from context if available
-            auth_token = context['auth'].get('token')
+            access_token = context['auth'].get('token')
             print(f"Processing request for authenticated user: {user_mobile} (ID: {user_id})")
         
         # Store location if provided
@@ -4183,6 +4262,8 @@ class FreshBusAssistant:
             print(f"Extracted date: {date}")
         
         # Add user message to session
+        if "messages" not in session or session["messages"] is None:
+            session["messages"] = []
         session['messages'].append({"role": "user", "content": query})
         api_data = {}
         
@@ -4198,13 +4279,14 @@ class FreshBusAssistant:
         print(f"Is tracking request: {is_tracking_request}")
 
         # Handle bus tracking requests
+        # Handle bus tracking requests
         if is_tracking_request:
             print("Bus tracking request detected")
             
             # Only proceed with authenticated users for tracking
-            if user_authenticated and auth_token:
+            if user_authenticated and access_token:
                 # Fetch user tickets 
-                tickets = await self.fetch_user_tickets(auth_token)
+                tickets = await self.fetch_user_tickets(access_token)
                 
                 if tickets:
                     # Process tickets to get active, completed, future tickets
@@ -4223,14 +4305,18 @@ class FreshBusAssistant:
                         trip_id = active_ticket.get("tripId")
                         
                         if trip_id:
+                            # Get tracking URL
+                            tracking_url = active_ticket.get("trackingUrlNew")
+                            
                             # Format as JSON for consistent frontend display
                             api_data["tracking"] = {
                                 "type": "active_ticket",
                                 "ticket": active_ticket,
                                 "tripId": trip_id,
-                                "from": active_ticket.get("source", "Unknown"),
-                                "to": active_ticket.get("destination", "Unknown"),
-                                "journeyDate": active_ticket.get("journeyDate", "Unknown"),
+                                "from": active_ticket.get("source", {}).get("name", "Unknown"),
+                                "to": active_ticket.get("destination", {}).get("name", "Unknown"),
+                                "journeyDate": active_ticket.get("date", "Unknown"),
+                                "trackingUrl": tracking_url,
                                 "eta": active_ticket.get("eta_data", {})
                             }
                             
@@ -4239,403 +4325,430 @@ class FreshBusAssistant:
                                 eta_data = await self.fetch_eta_data(trip_id)
                                 active_ticket["eta_data"] = eta_data
                                 api_data["tracking"]["eta"] = eta_data
+                            
+                            # Create a direct tracking response
+                            source_name = active_ticket.get("source", {}).get("name", "Unknown")
+                            dest_name = active_ticket.get("destination", {}).get("name", "Unknown")
+                            journey_date = active_ticket.get("date", "Unknown")
+                            
+                            direct_response = f"Your bus from {source_name} to {dest_name} is currently en route.\n\n"
+                            direct_response += f"You can track your bus in real-time here: {tracking_url}\n\n"
+                            
+                            # Add ETA information if available
+                            if eta_data and eta_data.get("message") != "This trip has ended":
+                                if eta_data.get("eta"):
+                                    direct_response += f"Estimated arrival time: {eta_data.get('eta')}\n"
+                                if eta_data.get("distance"):
+                                    direct_response += f"Current distance: {eta_data.get('distance')}\n"
+                            elif eta_data and eta_data.get("message") == "This trip has ended":
+                                direct_response = f"Your journey from {source_name} to {dest_name} has been completed.\n\n"
+                                direct_response += "The bus has already reached its destination. Thank you for traveling with Fresh Bus!"
+                            else:
+                                direct_response += "Real-time ETA information will be available when your bus starts its journey."
+                            
+                            # Save the direct response
+                            session['messages'].append({"role": "assistant", "content": direct_response})
+                            
+                            # Try to save to Redis with user ID
+                            try:
+                                user_mobile = None
+                                if context.get('user') and isinstance(context.get('user'), dict):
+                                    user_mobile = context['user'].get('mobile')
+                                
+                                conversation_id = conversation_manager.save_conversation(
+                                    session_id, 
+                                    session['messages'],
+                                    user_id=user_mobile
+                                )
+                                print(f"Saved tracking response to Redis: {conversation_id}, user mobile: {user_mobile}")
+                            except Exception as redis_err:
+                                print(f"Failed to save to Redis: {redis_err}")
+                                conversation_id = None
+                            
+                            # Return the direct response
+                            yield json.dumps({"text": direct_response, "done": False})
+                            yield json.dumps({
+                                "text": "", 
+                                "done": True, 
+                                "session_id": session_id,
+                                "language_style": context.get('language', 'english'),
+                                "conversation_id": conversation_id,
+                                "json_data": api_data
+                            })
+                            return
                     
-                    # If no active but completed tickets, look for NPS data
+                    # If no active but completed tickets, show most recent
                     elif processed_tickets["completed"]:
-                        # Use the most recent completed ticket
                         completed_ticket = processed_tickets["completed"][0]
-                        trip_id = completed_ticket.get("tripId")
+                        source_name = completed_ticket.get("source", {}).get("name", "Unknown")
+                        dest_name = completed_ticket.get("destination", {}).get("name", "Unknown")
+                        journey_date_str = completed_ticket.get("date", "Unknown")
                         
-                        if trip_id:
-                            # Get NPS data if not already present
-                            if not completed_ticket.get("nps_data"):
-                                nps_data = await self.fetch_nps_data(trip_id, auth_token)
-                                completed_ticket["nps_data"] = nps_data
+                        direct_response = f"You don't have any active trips right now.\n\n"
+                        direct_response += f"Your most recent completed journey was from {source_name} to {dest_name}"
+                        
+                        try:
+                            journey_date = datetime.fromisoformat(journey_date_str.replace('Z', '+00:00'))
+                            formatted_date = journey_date.strftime("%d %b %Y")
+                            direct_response += f" on {formatted_date}."
+                        except:
+                            direct_response += "."
+                        
+                        # Save the direct response
+                        session['messages'].append({"role": "assistant", "content": direct_response})
+                        
+                        # Try to save to Redis with user ID
+                        try:
+                            user_mobile = None
+                            if context.get('user') and isinstance(context.get('user'), dict):
+                                user_mobile = context['user'].get('mobile')
                             
-                            # Format NPS data as JSON
-                            nps_json = self.format_nps_data_as_json(
-                                completed_ticket.get("nps_data", {}),
-                                trip_id
+                            conversation_id = conversation_manager.save_conversation(
+                                session_id, 
+                                session['messages'],
+                                user_id=user_mobile
                             )
-                            
-                            api_data["tracking"] = {
-                                "type": "completed_ticket",
-                                "ticket": completed_ticket,
-                                "tripId": trip_id,
-                                "from": completed_ticket.get("source", "Unknown"),
-                                "to": completed_ticket.get("destination", "Unknown"),
-                                "journeyDate": completed_ticket.get("journeyDate", "Unknown"),
-                                "nps": nps_json
-                            }
+                            print(f"Saved completed journey response to Redis: {conversation_id}, user mobile: {user_mobile}")
+                        except Exception as redis_err:
+                            print(f"Failed to save to Redis: {redis_err}")
+                            conversation_id = None
+                        
+                        yield json.dumps({"text": direct_response, "done": False})
+                        yield json.dumps({
+                            "text": "", 
+                            "done": True, 
+                            "session_id": session_id,
+                            "language_style": context.get('language', 'english'),
+                            "conversation_id": conversation_id,
+                            "json_data": api_data
+                        })
+                        return
                     
-                    # If only future tickets, show the earliest one
+                    # If only future tickets, show earliest one
                     elif processed_tickets["future"]:
                         future_ticket = processed_tickets["future"][0]
-                        trip_id = future_ticket.get("tripId")
+                        source_name = future_ticket.get("source", {}).get("name", "Unknown")
+                        dest_name = future_ticket.get("destination", {}).get("name", "Unknown")
+                        journey_date_str = future_ticket.get("date", "Unknown")
                         
-                        if trip_id:
-                            api_data["tracking"] = {
-                                "type": "future_ticket",
-                                "ticket": future_ticket,
-                                "tripId": trip_id,
-                                "from": future_ticket.get("source", "Unknown"),
-                                "to": future_ticket.get("destination", "Unknown"),
-                                "journeyDate": future_ticket.get("journeyDate", "Unknown")
-                            }
+                        direct_response = f"You don't have any active trips right now.\n\n"
+                        direct_response += f"Your next upcoming journey is from {source_name} to {dest_name}"
+                        
+                        try:
+                            journey_date = datetime.fromisoformat(journey_date_str.replace('Z', '+00:00'))
+                            formatted_date = journey_date.strftime("%d %b %Y at %I:%M %p")
+                            direct_response += f" on {formatted_date}."
+                        except:
+                            direct_response += "."
+                        
+                        direct_response += "\n\nYou'll be able to track your bus once your journey begins."
+                        
+                        # Save the direct response
+                        session['messages'].append({"role": "assistant", "content": direct_response})
+                        
+                        # Try to save to Redis with user ID
+                        try:
+                            user_mobile = None
+                            if context.get('user') and isinstance(context.get('user'), dict):
+                                user_mobile = context['user'].get('mobile')
+                            
+                            conversation_id = conversation_manager.save_conversation(
+                                session_id, 
+                                session['messages'],
+                                user_id=user_mobile
+                            )
+                            print(f"Saved future journey response to Redis: {conversation_id}, user mobile: {user_mobile}")
+                        except Exception as redis_err:
+                            print(f"Failed to save to Redis: {redis_err}")
+                            conversation_id = None
+                        
+                        yield json.dumps({"text": direct_response, "done": False})
+                        yield json.dumps({
+                            "text": "", 
+                            "done": True, 
+                            "session_id": session_id,
+                            "language_style": context.get('language', 'english'),
+                            "conversation_id": conversation_id,
+                            "json_data": api_data
+                        })
+                        return
+                    
+                    # No tickets found
+                    else:
+                        direct_response = "You don't have any active or upcoming tickets right now.\n\n"
+                        direct_response += "When you book a ticket with Fresh Bus, you'll be able to track your bus in real-time by asking 'Where is my bus?'"
+                        
+                        # Save the direct response
+                        session['messages'].append({"role": "assistant", "content": direct_response})
+                        
+                        # Try to save to Redis with user ID
+                        try:
+                            user_mobile = None
+                            if context.get('user') and isinstance(context.get('user'), dict):
+                                user_mobile = context['user'].get('mobile')
+                            
+                            conversation_id = conversation_manager.save_conversation(
+                                session_id, 
+                                session['messages'],
+                                user_id=user_mobile
+                            )
+                            print(f"Saved no tickets response to Redis: {conversation_id}, user mobile: {user_mobile}")
+                        except Exception as redis_err:
+                            print(f"Failed to save to Redis: {redis_err}")
+                            conversation_id = None
+                        
+                        yield json.dumps({"text": direct_response, "done": False})
+                        yield json.dumps({
+                            "text": "", 
+                            "done": True, 
+                            "session_id": session_id,
+                            "language_style": context.get('language', 'english'),
+                            "conversation_id": conversation_id,
+                            "json_data": api_data
+                        })
+                        return
                 else:
                     # No tickets found
-                    api_data["tracking"] = {
-                        "type": "no_tickets",
-                        "message": "No tickets found for your account"
-                    }
-            else:
-                # User not authenticated
-                api_data["tracking"] = {
-                    "type": "not_authenticated",
-                    "message": "Please log in to track your bus"
-                }
-                
-        elif user_authenticated and (
-            "profile" in query.lower() or 
-            "my account" in query.lower() or 
-            "my details" in query.lower()
-        ):
-            # Handle profile requests
-            print("User profile request detected")
-            
-            # If user profile not cached or expired, fetch it
-            if not context.get('user_profile'):
-                user_profile = await self.fetch_user_profile(auth_token)
-                if user_profile:
-                    context['user_profile'] = user_profile
-                    api_data["user_profile"] = user_profile
+                    direct_response = "I couldn't find any tickets associated with your account.\n\n"
+                    direct_response += "When you book a ticket with Fresh Bus, you'll be able to track your bus in real-time by asking 'Where is my bus?'"
                     
-                    # Store user ID from profile if available
-                    if 'id' in user_profile and not user_id:
-                        user_id = user_profile['id']
+                    # Save the direct response
+                    session['messages'].append({"role": "assistant", "content": direct_response})
+                    
+                    # Try to save to Redis with user ID
+                    try:
+                        user_mobile = None
+                        if context.get('user') and isinstance(context.get('user'), dict):
+                            user_mobile = context['user'].get('mobile')
                         
-                    print("Fetched user profile")
+                        conversation_id = conversation_manager.save_conversation(
+                            session_id, 
+                            session['messages'],
+                            user_id=user_mobile
+                        )
+                        print(f"Saved no tickets found response to Redis: {conversation_id}, user mobile: {user_mobile}")
+                    except Exception as redis_err:
+                        print(f"Failed to save to Redis: {redis_err}")
+                        conversation_id = None
+                    
+                    yield json.dumps({"text": direct_response, "done": False})
+                    yield json.dumps({
+                        "text": "", 
+                        "done": True, 
+                        "session_id": session_id,
+                        "language_style": context.get('language', 'english'),
+                        "conversation_id": conversation_id,
+                        "json_data": api_data
+                    })
+                    return
             else:
-                api_data["user_profile"] = context.get('user_profile')
-                print("Using cached user profile")
+                # User not authenticated - create an authentication prompt
+                direct_response = "Please log in to track your bus. I need access to your ticket information to provide real-time tracking updates."
+                
+                # Save the direct response
+                session['messages'].append({"role": "assistant", "content": direct_response})
+                
+                # Try to save to Redis, though likely no user ID
+                try:
+                    conversation_id = conversation_manager.save_conversation(
+                        session_id, 
+                        session['messages'],
+                        user_id=None
+                    )
+                    print(f"Saved auth prompt to Redis: {conversation_id}")
+                except Exception as redis_err:
+                    print(f"Failed to save to Redis: {redis_err}")
+                    conversation_id = None
+                
+                yield json.dumps({"text": direct_response, "done": False})
+                yield json.dumps({
+                    "text": "", 
+                    "done": True, 
+                    "session_id": session_id,
+                    "language_style": context.get('language', 'english'),
+                    "conversation_id": conversation_id,
+                    "json_data": {
+                        "tracking": {
+                            "type": "not_authenticated",
+                            "message": "Please log in to track your bus"
+                        }
+                    }
+                })
+                return
         
-        # Handle standard bus booking flows
-        elif context.get('user_requested_source') and context.get('user_requested_destination'):
+        # Check if this is a bus listing request and we have trip data
+        is_bus_listing_request = any(kw in query.lower() for kw in ["book", "find", "search", "trip", "bus", "ticket"])
+        
+        # If we have source and destination, try to fetch trips
+        if context.get('user_requested_source') and context.get('user_requested_destination'):
             source = context['user_requested_source']
             destination = context['user_requested_destination']
+            travel_date = context.get('last_date', datetime.now().strftime("%Y-%m-%d"))
             
-            # Check if the route is valid
-            if not self.is_valid_route(source, destination):
-                # Create a response for invalid route
-                api_data["invalid_route"] = {
-                    "requested_source": source,
-                    "requested_destination": destination,
-                    "valid_routes": [
-                        "Hyderabad to Guntur/Vijayawada",
-                        "Bangalore to Tirupati/Chittoor",
-                        "Vijayawada to Hyderabad",
-                        "Guntur to Hyderabad"
-                    ]
-                }
-                print(f"Invalid route requested: {source} to {destination}")
-            else:
-                # Valid route, proceed with fetching trip data
-                source_id = self.stations.get(source)
-                destination_id = self.stations.get(destination)
+            # Convert source and destination names to IDs
+            source_id = self.stations.get(source.lower(), source)
+            destination_id = self.stations.get(destination.lower(), destination)
+            
+            print(f"Fetching trips for route: {source} to {destination}")
+            
+            # Store source and destination IDs for later use
+            context['source_id'] = source_id
+            context['destination_id'] = destination_id
+            
+            # Only fetch trips if we have valid IDs
+            if source_id and destination_id:
+                print(f"Using source_id={source_id}, destination_id={destination_id}")
                 
-                if source_id and destination_id:
-                    # Check if looking for nearby boarding points
-                    looking_for_boarding = any(phrase in query.lower() for phrase in ["boarding", "pickup", "pick up", "board", "pick-up", "station", "stop", "nearby", "close", "nearest"])
+                # Check if the route is valid first
+                if not self.is_valid_route(source, destination):
+                    print(f"Invalid route detected: {source} to {destination}")
                     
-                    # Check if looking for dropping points
-                    looking_for_dropping = any(phrase in query.lower() for phrase in ["dropping", "drop", "drop-off", "drop off", "destination"])
+                    # List valid routes for the response
+                    valid_routes = [
+                        "Hyderabad to Guntur",
+                        "Hyderabad to Vijayawada",
+                        "Vijayawada to Hyderabad",
+                        "Guntur to Hyderabad",
+                        "Bangalore to Tirupati",
+                        "Bangalore to Chittoor",
+                        "Tirupati to Bangalore",
+                        "Chittoor to Bangalore"
+                    ]
                     
-                    # Check if looking for seat selection
-                    looking_for_seats = any(phrase in query.lower() for phrase in ["seat", "where", "sit", "book", "select", "window", "aisle"])
+                    # Build invalid route response
+                    api_data["invalid_route"] = {
+                        "requested_source": source,
+                        "requested_destination": destination,
+                        "valid_routes": valid_routes
+                    }
+                else:
+                    # Route is valid, fetch trips
+                    trips = await self.fetch_trips(source_id, destination_id, travel_date)
                     
-                    # Get user's selected trip from context or detect from query
-                    selected_trip = context.get('selected_bus')
-                    
-                    # If user doesn't have a selected trip but we have trips data, try to detect
-                    if not selected_trip and 'last_trips' in context:
-                        trips = context['last_trips']
-                        selected_trip_index = self.detect_bus_selection(query, trips)
-                        if selected_trip_index is not None:
-                            selected_trip = trips[selected_trip_index]
-                            context['selected_bus'] = selected_trip
-                            print(f"Detected bus selection: {selected_trip_index}")
-                    
-                    # Check trip selection or seat selection in query
-                    if not selected_trip and not api_data.get("trips"):
-                        # If no trips yet, fetch them
-                        date = context.get('last_date')
-                        # Ensure date is not None
-                        if date is None:
-                            date = self.parse_date(query)
-                            context['last_date'] = date
-                        trips = await self.fetch_trips(source_id, destination_id, date)
+                    if trips:
+                        print(f"Found {len(trips)} trips for {source} to {destination}")
+                        api_data["trips"] = self.deduplicate_trips(trips)
                         
-                        if trips:
-                            # Process trips as normal
-                            api_data["trips"] = trips
-                            context['last_trips'] = trips
+                        # Check if user is authenticated to fetch preferences
+                        if user_authenticated and user_mobile:
+                            user_preferences = await self.fetch_user_preferences(user_mobile, access_token)
+                            if user_preferences:
+                                api_data["user_preferences"] = user_preferences
+                                
+                        # If there's only one trip, also fetch boarding, dropping points, and seats
+                        if len(trips) == 1:
+                            trip_id = trips[0]['tripid']
+                            api_data["selected_bus"] = trip_id
                             
-                            # Add user direction to API data
-                            api_data["user_direction"] = {
-                                "source": context['user_requested_source'],
-                                "destination": context['user_requested_destination'],
-                                "swap_points": False  # Never swap points for initial search
-                            }
-                            
-                            # If user has a location, find nearest boarding points
-                            if context.get('user_location'):
-                                boarding_points = []
-                                
-                                # Check all trips and aggregate boarding points
-                                for trip in trips:
-                                    trip_boarding_points = await self.fetch_boarding_points(trip.get('tripid'), source_id)
-                                    boarding_points.extend(trip_boarding_points)
-                                
-                                if boarding_points:
-                                    api_data["boarding_points"] = boarding_points
-                                    
-                                    # Get nearest boarding points
-                                    nearest_points = self.get_nearest_boarding_points_info(
-                                        boarding_points, 
-                                        context['user_location'],
-                                        max_points=3
-                                    )
-                                    
-                                    if nearest_points:
-                                        api_data["nearest_boarding_points"] = nearest_points
-                        else:
-                            # Handle case when no trips are found
-                            # Try reversing the direction
-                            print(f"No trips found from {context['user_requested_source']} to {context['user_requested_destination']}, trying reverse direction")
-                            reverse_trips = await self.fetch_trips(destination_id, source_id, date)
-                            
-                            if reverse_trips:
-                                print(f"Found {len(reverse_trips)} trips in reverse direction")
-                                
-                                # Store the trips with a note about reversed direction
-                                api_data["trips"] = reverse_trips
-                                context['last_trips'] = reverse_trips
-                                api_data["direction_reversed"] = True
-                                
-                                # Add user direction to API data, with swap_points=True
-                                api_data["user_direction"] = {
-                                    "source": context['user_requested_source'],
-                                    "destination": context['user_requested_destination'],
-                                    "swap_points": True  # Swap points since direction is reversed
-                                }
-                            else:
-                                # No trips found in either direction
-                                source_name = context['user_requested_source'].capitalize()
-                                destination_name = context['user_requested_destination'].capitalize()
-                                travel_date = date
-                                
-                                formatted_date = None
-                                if travel_date:
-                                    try:
-                                        formatted_date = datetime.fromisoformat(travel_date).strftime("%A, %B %d, %Y")
-                                    except:
-                                        formatted_date = travel_date  # Use the raw date if parsing fails
-                                else:
-                                    formatted_date = "the selected date"  # Default if no date
-                                                            
-                                # Provide a helpful message about no trips
-                                no_trips_message = f"I'm sorry, I couldn't find any buses from {source_name} to {destination_name} on {formatted_date}. This could be due to:"
-                                
-                                # Provide a helpful message about no trips
-                                no_trips_message = f"I'm sorry, I couldn't find any buses from {source_name} to {destination_name} on {formatted_date}. This could be due to:"
-                                no_trips_message += "\n\n1. No available services on this route for the selected date"
-                                no_trips_message += "\n2. All buses being fully booked"
-                                no_trips_message += "\n3. A temporary issue with our booking system"
-                                
-                                no_trips_message += "\n\nYou could try:"
-                                no_trips_message += f"\n• Checking a different date"
-                                no_trips_message += f"\n• Looking for buses to nearby destinations"
-                                no_trips_message += f"\n• Checking again in a few minutes if it's a temporary issue"
-                                
-                                # Set api_data with route information but no trips
-                                api_data["no_trips_info"] = {
-                                    "source": source_name,
-                                    "destination": destination_name,
-                                    "date": formatted_date,
-                                    "message": no_trips_message
-                                }
-                    
-                    # If user selected a specific trip and is asking about boarding/dropping points
-                    if selected_trip:
-                        trip_id = selected_trip.get('tripid')
-                        
-                        # Only fetch if not already in context
-                        if looking_for_boarding and not api_data.get("boarding_points"):
+                            # Fetch boarding and dropping points
                             boarding_points = await self.fetch_boarding_points(trip_id, source_id)
                             if boarding_points:
                                 api_data["boarding_points"] = boarding_points
                                 
-                                # If user has location, also get nearest boarding points
+                                # If user has location, find nearest boarding points
                                 if context.get('user_location'):
                                     nearest_points = self.get_nearest_boarding_points_info(
                                         boarding_points, 
                                         context['user_location'],
                                         max_points=3
                                     )
-                                    
                                     if nearest_points:
                                         api_data["nearest_boarding_points"] = nearest_points
-                                        
-                                    # Suggest the nearest boarding point if available
-                                    suggestion = self.suggest_boarding_point(
+                                
+                                # Suggest a boarding point based on context
+                                suggested_boarding = self.suggest_boarding_point(
+                                    boarding_points,
+                                    context.get('user_location'),
+                                    context.get('last_boarding_point')
+                                )
+                                if suggested_boarding:
+                                    api_data["suggested_boarding"] = suggested_boarding
+                                    
+                            # Fetch dropping points filtered by destination if available
+                            dropping_points = await self.fetch_dropping_points(trip_id, destination_id)
+                            if dropping_points:
+                                api_data["dropping_points"] = dropping_points
+                                
+                                # Suggest a dropping point based on context
+                                suggested_dropping = self.suggest_dropping_point(
+                                    dropping_points,
+                                    context.get('last_dropping_point')
+                                )
+                                if suggested_dropping:
+                                    api_data["suggested_dropping"] = suggested_dropping
+                                    
+                            # Fetch seats and get recommendations
+                            seat_recommendations = await self.get_seat_recommendations(trip_id, source_id, destination_id)
+                            if seat_recommendations:
+                                api_data["recommendations"] = seat_recommendations
+                        
+                        # If user has selected a bus from multiple options
+                        elif context.get('selected_bus') and len(trips) > 1:
+                            selected_trip = next((t for t in trips if str(t['tripid']) == str(context['selected_bus'])), None)
+                            if selected_trip:
+                                trip_id = selected_trip['tripid']
+                                
+                                # Same fetching logic as above for the selected bus
+                                boarding_points = await self.fetch_boarding_points(trip_id, source_id)
+                                if boarding_points:
+                                    api_data["boarding_points"] = boarding_points
+                                    
+                                    if context.get('user_location'):
+                                        nearest_points = self.get_nearest_boarding_points_info(
+                                            boarding_points, 
+                                            context['user_location'],
+                                            max_points=3
+                                        )
+                                        if nearest_points:
+                                            api_data["nearest_boarding_points"] = nearest_points
+                                    
+                                    suggested_boarding = self.suggest_boarding_point(
                                         boarding_points,
                                         context.get('user_location'),
                                         context.get('last_boarding_point')
                                     )
+                                    if suggested_boarding:
+                                        api_data["suggested_boarding"] = suggested_boarding
+                                        
+                                dropping_points = await self.fetch_dropping_points(trip_id, destination_id)
+                                if dropping_points:
+                                    api_data["dropping_points"] = dropping_points
                                     
-                                    if suggestion:
-                                        api_data["suggested_boarding"] = suggestion
-                                        context['last_boarding_point'] = suggestion
+                                    suggested_dropping = self.suggest_dropping_point(
+                                        dropping_points,
+                                        context.get('last_dropping_point')
+                                    )
+                                    if suggested_dropping:
+                                        api_data["suggested_dropping"] = suggested_dropping
+                                        
+                                seat_recommendations = await self.get_seat_recommendations(trip_id, source_id, destination_id)
+                                if seat_recommendations:
+                                    api_data["recommendations"] = seat_recommendations
+                    else:
+                        # No trips found for the route
+                        api_data["no_trips_info"] = {
+                            "source": source,
+                            "destination": destination,
+                            "date": travel_date,
+                            "message": f"No buses found from {source} to {destination} for the selected date."
+                        }
+                        print(f"No trips found for {source} to {destination} on {travel_date}")
                         
-                        # Only fetch if not already in context
-                        if looking_for_dropping and not api_data.get("dropping_points"):
-                            # Get destination ID from the stations dictionary based on the user's requested destination
-                            dest_id = None
-                            if destination_id:
-                                dest_id = destination_id
-                            elif context.get('user_requested_destination'):
-                                dest_id = self.stations.get(context['user_requested_destination'].lower())
-                                print(f"Using destination ID {dest_id} from user's requested destination: {context['user_requested_destination']}")
-                            
-                            dropping_points = await self.fetch_dropping_points(trip_id, dest_id)
-                            if dropping_points:
-                                print(f"Fetched {len(dropping_points)} dropping points for destination ID {dest_id}")
-                                api_data["dropping_points"] = dropping_points
-                                
-                                # Suggest a dropping point
-                                suggestion = self.suggest_dropping_point(
-                                    dropping_points,
-                                    context.get('last_dropping_point')
-                                )
-                                
-                                if suggestion:
-                                    api_data["suggested_dropping"] = suggestion
-                                    context['last_dropping_point'] = suggestion
+                        # Check if we can find trips in the opposite direction
+                        print(f"Checking reverse direction: {destination} to {source}")
+                        reverse_source_id = destination_id
+                        reverse_destination_id = source_id
+                        reverse_trips = await self.fetch_trips(reverse_source_id, reverse_destination_id, travel_date)
                         
-                        # Only fetch if not already in context
-                        if looking_for_seats and not api_data.get("recommendations"):
-                            seats_data = await self.fetch_seats(trip_id, source_id, destination_id)
-                            if seats_data:
-                                # Get user preferences (either from auth or session)
-                                user_preferences = None
-                                
-                                # If user is authenticated and mobile number available
-                                if user_authenticated and user_mobile:
-                                    user_preferences = await self.fetch_user_preferences(user_mobile, auth_token)
-                                    api_data["user_preferences"] = user_preferences
-                                
-                                # Get recommendations
-                                recommendations = await self.get_seat_recommendations(
-                                    seats_data, 
-                                    context.get('ticket_count', 1),
-                                    user_preferences
-                                )
-                                
-                                if recommendations:
-                                    api_data["recommendations"] = recommendations
-                                    
-                        # Add preferences to api_data even if seats weren't fetched
-                        api_data["window_preference"] = window_pref
-                        api_data["aisle_preference"] = aisle_pref
+                        if reverse_trips:
+                            print(f"Found {len(reverse_trips)} trips in the reverse direction")
+                            api_data["direction_reversed"] = True
+                            api_data["trips"] = self.deduplicate_trips(reverse_trips)
+                            api_data["reverse_direction"] = {
+                                "source": destination,
+                                "destination": source
+                            }
 
-        api_data["ticket_count"] = context.get('ticket_count', 1)
-        
-        # Pass user's requested direction to api_data if needed
-        if context.get('user_requested_source') and context.get('user_requested_destination'):
-            if not api_data.get("user_direction"):
-                api_data["user_direction"] = {
-                    "source": context['user_requested_source'],
-                    "destination": context['user_requested_destination'],
-                    "swap_points": context.get('reverse_direction', False)
-                }
-        
-        # Add user profile to API data if available
-        if context.get('user_profile'):
-            api_data["user_profile"] = context.get('user_profile')
-        
-        # Special direct handling for trip ended case
-        if api_data.get("eta_data") and api_data["eta_data"].get("message") == "This trip has ended":
-            trip_id = api_data.get("trip_id", "Unknown")
-            direct_response = f"This trip (ID: {trip_id}) has ended. The bus has completed its journey.\n\n"
-            
-            # Check for feedback data
-            if api_data.get("feedback_data"):
-                feedback = api_data["feedback_data"]
-                
-                # First try trip-specific feedback
-                if api_data.get("trip_feedback"):
-                    trip_feedback = api_data["trip_feedback"]
-                    direct_response += "You can provide feedback on your journey through the Fresh Bus app.\n\n"
-                    
-                    if trip_feedback.get("questions"):
-                        direct_response += "Feedback questions:\n"
-                        for i, question in enumerate(trip_feedback["questions"]):
-                            direct_response += f"{i+1}. {question.get('questionText', 'Rate your journey')}\n"
-                # Then try any feedback data
-                elif isinstance(feedback, list) and len(feedback) > 0:
-                    direct_response += "You can provide feedback on your journey through the Fresh Bus app.\n\n"
-                    direct_response += "Feedback questions:\n"
-                    
-                    # Show questions from the first feedback item
-                    if feedback[0].get("questions"):
-                        for i, question in enumerate(feedback[0]["questions"]):
-                            direct_response += f"{i+1}. {question.get('questionText', 'Rate your journey')}\n"
-                # Handle message format
-                elif feedback.get("message"):
-                    direct_response += feedback.get("message")
-                # Default message
-                else:
-                    direct_response += "You can provide feedback on your journey through the Fresh Bus app."
-            else:
-                direct_response += "You can check for feedback options in the Fresh Bus app."
-            
-            # Save the direct response
-            session['messages'].append({"role": "assistant", "content": direct_response})
-            
-            # Try to save to Redis with user ID
-            try:
-                # Extract user ID from auth context or from previously fetched profile data
-                if not user_id and context.get('auth') and context.get('user'):
-                    user_data = context['user']
-                    user_id = user_data.get('id') or user_data.get('mobile')  # Use ID first, fallback to mobile
-                
-                # Also check if we have ID in user_profile
-                if not user_id and context.get('user_profile'):
-                    user_id = context['user_profile'].get('id')
-                    
-                conversation_id = conversation_manager.save_conversation(
-                    session_id, 
-                    session['messages']
-                )
-                print(f"Saved direct trip ended response to Redis: {conversation_id}, user: {user_id}")
-            except Exception as redis_err:
-                print(f"Failed to save to Redis: {redis_err}")
-                conversation_id = None
-            
-            # Return the direct response instead of calling Claude
-            yield json.dumps({"text": direct_response, "done": False})
-            yield json.dumps({
-                "text": "", 
-                "done": True, 
-                "session_id": session_id, 
-                "language_style": context.get('language', 'english'),
-                "conversation_id": conversation_id
-            })
-            return
-        
-        # Check if this is a bus listing request and we have trip data
-        is_bus_listing_request = any(kw in query.lower() for kw in ["book", "find", "search", "trip", "bus", "ticket"])
-        
         # Handle invalid route with direct response
         if api_data.get("invalid_route"):
             invalid_route = api_data["invalid_route"]
@@ -4665,7 +4778,8 @@ class FreshBusAssistant:
                     
                 conversation_id = conversation_manager.save_conversation(
                     session_id, 
-                    session['messages']
+                    session['messages'],
+                    user_id=user_mobile
                 )
                 print(f"Saved invalid route response to Redis: {conversation_id}, user: {user_id}")
             except Exception as redis_err:
@@ -4710,7 +4824,8 @@ class FreshBusAssistant:
                     
                 conversation_id = conversation_manager.save_conversation(
                     session_id, 
-                    session['messages']
+                    session['messages'],
+                    user_id=user_mobile
                 )
                 print(f"Saved direct response to Redis: {conversation_id}, user: {user_id}")
             except Exception as redis_err:
@@ -4733,6 +4848,8 @@ class FreshBusAssistant:
             })
             return
         
+        # Continue with the rest of the method...
+        # (Remaining code unchanged)
         # Only call vector_db operations if we have real API data and it's not a direct response
         relevant_context = {"documents": ["I don't have specific information about that."]}
         try:
@@ -5008,7 +5125,8 @@ class FreshBusAssistant:
                                 
                             conversation_id = conversation_manager.save_conversation(
                                 session_id, 
-                                session['messages']
+                                session['messages'],
+                                user_id=user_mobile
                             )
                             if conversation_id:
                                 print(f"Saved conversation to Redis with ID: {conversation_id}, user: {redis_user_id}")
@@ -5070,7 +5188,8 @@ class FreshBusAssistant:
                             
                     conversation_id = conversation_manager.save_conversation(
                         session_id, 
-                        session['messages']
+                        session['messages'],
+                        user_id=user_mobile
                     )
                     if conversation_id:
                         print(f"Saved direct response to Redis: {conversation_id}, user: {redis_user_id}")
@@ -5121,7 +5240,8 @@ class FreshBusAssistant:
                             
                     conversation_id = conversation_manager.save_conversation(
                         session_id, 
-                        session['messages']
+                        session['messages'],
+                        user_id=user_mobile
                     )
                     if conversation_id:
                         print(f"Saved simple response to Redis: {conversation_id}, user: {redis_user_id}")
@@ -5179,7 +5299,8 @@ class FreshBusAssistant:
                             
                     conversation_id = conversation_manager.save_conversation(
                         session_id, 
-                        session['messages']
+                        session['messages'],
+                        user_id=user_mobile
                     )
                     if conversation_id:
                         print(f"Saved fallback conversation to Redis: {conversation_id}, user: {redis_user_id}")
@@ -5212,13 +5333,14 @@ fresh_bus_assistant = FreshBusAssistant()
 # Create the FastAPI app with lifespan
 app = FastAPI(title="Fresh Bus Travel Assistant", lifespan=lifespan)
 
-# Add CORS middleware
+# Add CORS middleware with proper configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173"],  # Add your frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Authorization", "X-Access-Token", "access_token", "refresh_token", "Set-Cookie"]
 )
 
 # Serve static files
@@ -5232,23 +5354,39 @@ def setup_middleware(app_instance):
     @app_instance.middleware("http")
     async def authenticate_user(request: Request, call_next):
         """Middleware to authenticate user and add user data to request"""
-        # Get the auth token from the request headers
-        auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            auth_token = auth_header.replace("Bearer ", "")
+        # 1. Extract tokens
+        auth_header = request.headers.get("Authorization", "")
+        access_token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
+
+        # Try cookies next
+        if not access_token:
+            access_token = request.cookies.get("access_token")
+
+        # Refresh token from cookies or headers
+        refresh_token = request.cookies.get("refresh_token") \
+            or request.headers.get("X-Refresh-Token") \
+            or request.headers.get("refresh_token")
+
+        # 2. If we have an access token, fetch profile
+        if access_token:
             try:
-                # Get user profile using the token
-                profile_data = await fresh_bus_assistant.fetch_user_profile(auth_token)
-                if profile_data:
-                    # Add user data to request state
-                    request.state.user = profile_data
-                    # Also add the token
-                    request.state.token = auth_token
+                profile = await fresh_bus_assistant.fetch_user_profile(
+                    access_token,
+                    refresh_token
+                )
+                if profile:
+                    request.state.user = profile
+                    request.state.token = access_token
             except Exception as e:
                 print(f"Error authenticating user: {e}")
-        
-        # Continue with the request
+
+        # 3. Continue with the request
         response = await call_next(request)
+
+        # Ensure CORS exposes our custom headers
+        if any(h in response.headers for h in ("access_token", "refresh_token")):
+            response.headers["Access-Control-Expose-Headers"] = "access_token, refresh_token"
+
         return response
 
 # Then call this function with app
@@ -5271,106 +5409,293 @@ async def get_current_model():
         )
     })
 
-import json  # Add this import if not already present
-from fastapi import Request
+# --------------------------------------------------------------------
+#  Ticket‑blocking endpoint (replace the whole function with this one)
+# --------------------------------------------------------------------
+# from fastapi import HTTPException   # already imported near top – keep only once
+# from fastapi.responses import JSONResponse
+
+
+import re
+from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 
+
+# ---------------------------------------------------------------------------
+# Helper 1 – coerce anything that "looks like digits" to an int
+# ---------------------------------------------------------------------------
+def _to_int(value, field_name: str) -> int:
+    """
+    Convert *value* to int.
+
+    • If it is already an int  → return it untouched.
+    • If it is a string that contains digits anywhere
+      (e.g. "32997‑boarding") → grab the first run of digits.
+    • Otherwise raise 400.
+    """
+    if isinstance(value, int):
+        return value
+
+    if isinstance(value, str):
+        m = re.search(r"\d+", value)
+        if m:
+            return int(m.group())
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"Bad {field_name} value: must contain digits"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Helper 2 – turn tokens like "32997‑10‑w" into the *real* seat.id (e.g. 698951)
+# NEW IMPLEMENTATION: Since we don't have a reliable way to map from seat tokens
+# to actual seat IDs, we'll just handle them properly in the frontend.
+# ---------------------------------------------------------------------------
+async def _resolve_seat_token(
+    *,
+    seat_token: str,
+    trip_id: int,
+    boarding_point_id: int,
+    dropping_point_id: int,
+    session,  # aiohttp.ClientSession
+    base_url_customer: str
+) -> int:
+    """
+    If *seat_token* is already all‑digits → just return int(token).
+
+    For non-numeric tokens, we'll extract the seat ID using the first 
+    pattern of digits we find.
+    """
+    # Handle direct numeric seat IDs
+    if str(seat_token).isdigit():
+        return int(seat_token)
+
+    # For patterns like "32997-10-a", extract just the first numeric part
+    m = re.search(r"\d+", str(seat_token))
+    if m:
+        # This will give us a basic numeric ID - better than nothing
+        numeric_id = int(m.group())
+        print(f"Extracted numeric part {numeric_id} from seat token {seat_token}")
+        
+        # If this is the trip ID format (like in "32997-10-a"), try to get a real seat ID
+        if "-" in str(seat_token):
+            parts = str(seat_token).split("-")
+            if len(parts) >= 2 and parts[0].isdigit():
+                # In this case, we need to get the real seat IDs from the API
+                # This requires that proper boarding_point_id and dropping_point_id be provided
+                # Format the URL for the seats endpoint
+                url = (
+                    f"{base_url_customer}/trips/{trip_id}/seats"
+                    f"?source_id={boarding_point_id}"
+                    f"&destination_id={dropping_point_id}"
+                )
+                print(f"Fetching seat map from: {url}")
+                
+                try:
+                    async with session.get(url) as r:
+                        if r.status != 200:
+                            text = await r.text()
+                            print(f"Error fetching seat map: {r.status} - {text}")
+                            # Fall back to numeric_id instead of failing completely
+                            return numeric_id
+                        
+                        seat_data = await r.json()
+                        print(f"Received seat data keys: {seat_data.keys() if isinstance(seat_data, dict) else 'list'}")
+                        
+                        # Extract seats from response (could be under 'seats' key or direct list)
+                        seats = []
+                        if isinstance(seat_data, dict) and "seats" in seat_data:
+                            seats = seat_data["seats"]
+                        elif isinstance(seat_data, list):
+                            seats = seat_data
+                            
+                        seat_name = parts[1]  # The second part like "10" in "32997-10-a"
+                        
+                        # Try to find matching seat
+                        for seat in seats:
+                            seat_name_value = str(seat.get("seatName", seat.get("name", "")))
+                            if seat_name_value == seat_name:
+                                seat_id = seat.get("id")
+                                if seat_id:
+                                    print(f"Found matching seat: {seat_name} → ID: {seat_id}")
+                                    return int(seat_id)
+                        
+                        print(f"No matching seat found for {seat_name}, falling back to {numeric_id}")
+                except Exception as e:
+                    print(f"Error in seat resolution: {e}")
+                    # Fall back to numeric_id
+        
+        return numeric_id
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"Bad seat_id value: {seat_token} - must contain digits"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Helper function to resolve boarding/dropping point IDs 
+# ---------------------------------------------------------------------------
+async def _resolve_point_id(
+    *,
+    point_token: str,
+    trip_id: int,
+    is_boarding: bool,
+    session,  # aiohttp.ClientSession
+    base_url_customer: str
+) -> int:
+    """
+    Resolve boarding or dropping point tokens to actual IDs.
+    For patterns like "32997-boarding", extract just the numeric part.
+    """
+    # If it's already a number, just return it
+    if str(point_token).isdigit():
+        return int(point_token)
+    
+    # Try to extract numeric part
+    m = re.search(r"\d+", str(point_token))
+    if m:
+        # If we have a format like "32997-boarding", try to get the real point ID
+        # by fetching from the API
+        endpoint = "boardings" if is_boarding else "droppings"
+        url = f"{base_url_customer}/trips/{trip_id}/{endpoint}"
+        print(f"Fetching {'boarding' if is_boarding else 'dropping'} points from: {url}")
+        
+        try:
+            async with session.get(url) as r:
+                if r.status != 200:
+                    text = await r.text()
+                    print(f"Error fetching points: {r.status} - {text}")
+                    # Fall back to numeric part of token
+                    return int(m.group())
+                
+                points_data = await r.json()
+                
+                # For simple case, return first point's ID
+                if isinstance(points_data, list) and points_data:
+                    point_id = points_data[0].get("id")
+                    if point_id:
+                        print(f"Using first {'boarding' if is_boarding else 'dropping'} point: {point_id}")
+                        return int(point_id)
+        except Exception as e:
+            print(f"Error resolving point ID: {e}")
+    
+        # Fall back to numeric part of token
+        return int(m.group())
+    
+    raise HTTPException(
+        status_code=400,
+        detail=f"Bad {'boarding' if is_boarding else 'dropping'}_point_id value: {point_token}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# The **fixed** /tickets/block route
+# ---------------------------------------------------------------------------
+# ──────────────────────────────────────────────────────────────────────────────
+#  /tickets/block  – CREATE A PAYMENT ORDER
+# ──────────────────────────────────────────────────────────────────────────────
 @app.post("/tickets/block")
 async def block_ticket(request: Request):
-    """Block a ticket with passenger details and return payment URL"""
+    """Create a payment order for booking tickets."""
     try:
-        # Get the request body
-        booking_data = await request.json()
-        
-        # Check if all required fields are present
-        required_fields = ["mobile", "email", "trip_id", "boarding_point_id", 
-                           "dropping_point_id", "seat_map"]
-        
-        for field in required_fields:
-            if field not in booking_data:
-                return JSONResponse(
-                    status_code=400,
-                    content={"success": False, "message": f"Missing required field: {field}"}
-                )
-        
-        # Get the auth token from the request headers
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
+        body = await request.json()
+        req_id = str(uuid.uuid4())[:8]
+        print(f"[{req_id}] Received ticket block request → {body}")
+
+        # Authentication check
+        access = request.headers.get("Authorization", "").replace("Bearer ", "")
+        if not access:
             return JSONResponse(
-                status_code=401,
+                status_code=401, 
                 content={"success": False, "message": "Authentication required"}
             )
+
+        # Validate required fields
+        required_fields = ["mobile", "email", "trip_id", "seat_map", 
+                          "boarding_point_id", "dropping_point_id"]
+        missing_fields = [field for field in required_fields if field not in body]
+        if missing_fields:
+            return JSONResponse(
+                status_code=400, 
+                content={"success": False, "message": f"Missing required fields: {', '.join(missing_fields)}"}
+            )
+
+        # Prepare the upstream request
+        upstream = {
+            "mobile": body["mobile"],
+            "email": body["email"],
+            "seat_map": body["seat_map"],
+            "trip_id": body["trip_id"],
+            "boarding_point_id": body["boarding_point_id"],
+            "dropping_point_id": body["dropping_point_id"],
+            "boarding_point_time": body.get("boarding_point_time"),
+            "dropping_point_time": body.get("dropping_point_time"),
+            "total_collect_amount": body.get("total_collect_amount", 0),
+            "main_category": body.get("main_category", 1),
+            "freshcard": body.get("freshcard", False),
+            "freshcardId": body.get("freshcardId") if body.get("freshcard", False) else 1,
+            "return_url": body.get("return_url")
+        }
         
-        auth_token = auth_header.replace("Bearer ", "")
+        # Remove None values 
+        upstream = {k: v for k, v in upstream.items() if v is not None}
+
+        print(f"[{req_id}] Prepared payload → {upstream}")
+
+        # Forward to Fresh Bus
+        headers = {
+            "Authorization": f"Bearer {access}",
+            "Content-Type": "application/json",
+        }
+        book_url = f"{fresh_bus_assistant.BASE_URL_CUSTOMER}/tickets/block"
         
-        # Initialize HTTP session if needed
         if not fresh_bus_assistant.http_session:
             await fresh_bus_assistant.init_http_session()
-        
-        # Prepare the booking request payload
-        booking_payload = {
-            "mobile": booking_data["mobile"],
-            "email": booking_data["email"],
-            "seat_map": booking_data["seat_map"],
-            "trip_id": booking_data["trip_id"],
-            "boarding_point_id": booking_data["boarding_point_id"],
-            "dropping_point_id": booking_data["dropping_point_id"],
-            "boarding_point_time": booking_data.get("boarding_point_time", "2025-04-11T23:20:00.000Z"),
-            "dropping_point_time": booking_data.get("dropping_point_time", "2025-04-12T07:30:00.000Z"),
-            "total_collect_amount": booking_data.get("total_collect_amount", 0),
-            "main_category": booking_data.get("main_category", 1),
-            "freshcard": booking_data.get("freshcard", False),
-            "freshcardId": booking_data.get("freshcardId", 1),
-            "return_url": booking_data.get("return_url", "https://freshbus.com/booking-confirmation")
-        }
-        
-        # Forward fare details if provided (using original structure)
-        if "fare" in booking_data:
-            booking_payload["fare"] = booking_data["fare"]
-        
-        print(f"Sending ticket block request to Fresh Bus API with payload: {booking_payload}")
-        
-        # Make the booking API call to the correct endpoint
-        booking_url = f"{fresh_bus_assistant.BASE_URL_CUSTOMER}/tickets/block"
-        
-        headers = {
-            "Authorization": f"Bearer {auth_token}",
-            "Content-Type": "application/json"
-        }
-        
-        print(f"Sending ticket block request to {booking_url}")
-        
+            
         async with fresh_bus_assistant.http_session.post(
-            booking_url, 
-            json=booking_payload,
+            book_url, 
+            json=upstream,
             headers=headers
         ) as response:
-            response_data = await response.json()
-            print("Ticket block response:")
-            print(json.dumps(response_data, indent=2))  # This prints the JSON response in the terminal
-            
-            # Accept both 200 and 201 status codes as successful responses
-            if response.status in [200, 201]:
+            status_code = response.status
+            try:
+                resp_json = await response.json()
+            except:
+                resp_text = await response.text()
+                resp_json = {"error": f"Failed to parse response: {resp_text[:200]}..."}
+                
+            print(f"[{req_id}] Upstream status {status_code}, body: {resp_json}")
+
+            if status_code in (200, 201):
                 return JSONResponse(
+                    status_code=status_code, 
                     content={
                         "success": True,
-                        "message": "Ticket blocked successfully",
-                        "payment_details": response_data
+                        "payment_details": resp_json
                     }
                 )
-            else:
-                error_message = response_data.get("message", "Unknown error")
-                return JSONResponse(
-                    status_code=response.status,
-                    content={"success": False, "message": f"Ticket blocking failed: {error_message}"}
-                )
-                
+            return JSONResponse(
+                status_code=status_code,
+                content={
+                    "success": False, 
+                    "message": resp_json.get("message", "Booking failed"),
+                    "details": resp_json
+                }
+            )
+
     except Exception as e:
-        print(f"Error blocking ticket: {e}")
+        print(f"[{req_id}] UNHANDLED ERROR: {e}")
+        import traceback
+        traceback.print_exc()
         return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"Error blocking ticket: {str(e)}"}
-        )    
+            status_code=500, 
+            content={"success": False, "message": str(e)}
+        )
+
+
+# In app.py
 
 @app.route("/profile", methods=["GET"])
 async def get_user_profile(request: Request):
@@ -5395,36 +5720,54 @@ async def get_user_profile(request: Request):
         ) as response:
             if response.status == 200:
                 profile_data = await response.json()
-                # Cache the user profile in Redis for faster access
-                user_id = str(profile_data['id'])
                 
-                # Print user login details in terminal
-                print("\n=== User Login Details ===")
-                print(f"User ID: {user_id}")
-                print(f"Name: {profile_data.get('name', 'N/A')}")
-                print(f"Email: {profile_data.get('email', 'N/A')}")
-                print(f"Mobile: {profile_data.get('mobile', 'N/A')}")
-                print(f"Gender: {profile_data.get('gender', 'N/A')}")
+                # Extract mobile number from profile
+                mobile = profile_data.get('mobile')
                 
-                # Print additional details if available
-                if profile_data.get('address'):
-                    print(f"Address: {profile_data['address']}")
-                if profile_data.get('preferredLanguage'):
-                    print(f"Preferred Language: {profile_data['preferredLanguage']}")
-                if profile_data.get('availableCoins'):
-                    print(f"Available Coins: {profile_data['availableCoins']}")
-                    
-                print("Login Time:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                print("=" * 25)
+                # Print user login details in terminal with clear formatting
+                print("\n" + "="*50)
+                print("                USER LOGIN DETECTED                ")
+                print("="*50)
+                print(f"Mobile:     {mobile}")
+                print(f"Name:       {profile_data.get('name', 'N/A')}")
+                print(f"Email:      {profile_data.get('email', 'N/A')}")
+                print(f"Gender:     {profile_data.get('gender', 'N/A')}")
+                print(f"Login Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                print("="*50)
                 
-                # Store in Redis conversation manager
-                conversation_manager.update_user_profile(user_id, profile_data)
+                # Get or create the session
+                session_id = request.query_params.get("session_id")
+                print(f"Session ID from query params: {session_id}")
                 
-                # Also store in memory for the session if active
-                if 'user' in request.session:
-                    request.session['user_profile'] = profile_data
+                session, session_id = fresh_bus_assistant.get_or_create_session(session_id)
                 
-                return JSONResponse(content=profile_data)
+                # Update the session context with user profile
+                session['context']['user_profile'] = profile_data
+                
+                # CRITICAL: Store user data with mobile in user context
+                session['context']['user'] = {
+                    'mobile': mobile,  # Key change: store mobile instead of ID
+                    'name': profile_data.get('name'),
+                    'email': profile_data.get('email'),
+                    'gender': profile_data.get('gender')
+                }
+                
+                # Save context to Redis
+                conversation_manager.save_context(session_id, session['context'])
+                
+                print(f"⚠️ Session ID: {session_id}")
+                print(f"⚠️ User mobile {mobile} stored in session context")
+                print(f"⚠️ Context saved to Redis")
+                print("="*50 + "\n")
+                
+                # Additionally, store user profile separately in Redis (using mobile as key)
+                conversation_manager.update_user_profile(mobile, profile_data, ttl_seconds=86400*7)  # 7 days TTL
+                
+                # Add session ID to response for frontend
+                response_data = profile_data.copy()
+                response_data["session_id"] = session_id
+                
+                return JSONResponse(content=response_data)
             else:
                 error_text = await response.text()
                 print("\n=== Login Failed ===")
@@ -5438,6 +5781,8 @@ async def get_user_profile(request: Request):
         print("\n=== Login Error ===")
         print(f"Error: {str(e)}")
         print("=" * 25)
+        import traceback
+        traceback.print_exc()  # Print the full stack trace
         return JSONResponse(
             status_code=500,
             content={"error": f"Error fetching profile: {str(e)}"}
@@ -5451,95 +5796,84 @@ async def get_user_conversations(
 ):
     """Get conversations for the authenticated user"""
     try:
-        # Get the auth token from the request headers
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            return JSONResponse(
-                status_code=401,
-                content={"error": "Authentication required"}
-            )
-        
-        auth_token = auth_header.replace("Bearer ", "")
-        
-        # Get user profile to get user ID
+        # 1. Access token
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            return JSONResponse(status_code=401, content={"error": "Authentication required"})
+        access_token = auth.replace("Bearer ", "")
+
+        # 2. Refresh token
+        refresh_token = (
+            request.cookies.get("refresh_token")
+            or request.headers.get("X-Refresh-Token")
+            or request.headers.get("refresh_token")
+        )
+
+        # 3. Ensure HTTP session
         if not fresh_bus_assistant.http_session:
             await fresh_bus_assistant.init_http_session()
-        
-        profile_data = await fresh_bus_assistant.fetch_user_profile(auth_token)
-        if not profile_data:
-            return JSONResponse(
-                status_code=404,
-                content={"error": "User profile not found"}
-            )
-            
-        # Use ID from profile data
-        user_id = str(profile_data.get("id"))
+
+        # 4. Fetch profile (now hits BASE_URL_CUSTOMER/profile)
+        profile = await fresh_bus_assistant.fetch_user_profile(access_token, refresh_token)
+        if not profile:
+            return JSONResponse(status_code=404, content={"error": "User profile not found"})
+
+        # 5. Determine user_id
+        user_id = str(profile.get("id") or profile.get("mobile") or "")
         if not user_id:
-            user_id = profile_data.get("mobile")  # Fallback to mobile if ID not available
-            
-        if not user_id:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "User ID not found in profile"}
-            )
-        
-        # Get user's conversations
-        conversations = conversation_manager.get_conversations_by_user(user_id, limit, offset)
-        return JSONResponse(content=conversations)
+            return JSONResponse(status_code=400, content={"error": "User ID not found in profile"})
+
+        # 6. Fetch and return
+        convos = conversation_manager.get_conversations_by_user(user_id, limit, offset)
+        return JSONResponse(content=convos)
+
     except Exception as e:
         print(f"Error getting user conversations: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={"error": f"Error retrieving conversations: {str(e)}"}
-        )
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 
 @app.delete("/user/conversations")
 async def delete_user_conversations(request: Request):
     """Delete all conversations for the authenticated user"""
     try:
-        # Get the auth token from the request headers
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            return JSONResponse(
-                status_code=401,
-                content={"error": "Authentication required"}
-            )
-        
-        auth_token = auth_header.replace("Bearer ", "")
-        
-        # Get user profile to get user ID
+        # 1. Access token
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            return JSONResponse(status_code=401, content={"error": "Authentication required"})
+        access_token = auth.replace("Bearer ", "")
+
+        # 2. Refresh token
+        refresh_token = (
+            request.cookies.get("refresh_token")
+            or request.headers.get("X-Refresh-Token")
+            or request.headers.get("refresh_token")
+        )
+
+        # 3. Ensure HTTP session
         if not fresh_bus_assistant.http_session:
             await fresh_bus_assistant.init_http_session()
-        
-        profile_data = await fresh_bus_assistant.fetch_user_profile(auth_token)
-        if not profile_data:
-            return JSONResponse(
-                status_code=404,
-                content={"error": "User profile not found"}
-            )
-            
-        # Use ID from profile data
-        user_id = str(profile_data.get("id"))
+
+        # 4. Fetch profile to get user ID
+        profile = await fresh_bus_assistant.fetch_user_profile(access_token, refresh_token)
+        if not profile:
+            return JSONResponse(status_code=404, content={"error": "User profile not found"})
+
+        user_id = str(profile.get("id") or profile.get("mobile") or "")
         if not user_id:
-            user_id = profile_data.get("mobile")  # Fallback to mobile if ID not available
-            
-        if not user_id:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "User ID not found in profile"}
-            )
-        
-        # Delete user's conversations
+            return JSONResponse(status_code=400, content={"error": "User ID not found in profile"})
+
+        # 5. Delete and respond
         count = conversation_manager.delete_user_conversations(user_id)
-        return JSONResponse(
-            content={"status": "success", "message": f"Deleted {count} conversations"}
-        )
+        return JSONResponse(content={
+            "status": "success",
+            "message": f"Deleted {count} conversations"
+        })
+
     except Exception as e:
         print(f"Error deleting user conversations: {e}")
-        return JSONResponse(
-            status_code=500, 
-            content={"error": f"Error deleting conversations: {str(e)}"}
-        )
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 
 @app.post("/api/select-model")
 async def select_model(selection: ModelSelectionRequest):
@@ -5596,7 +5930,7 @@ async def get_trip_feedback(trip_id: str, request: Request):
                 content={"success": False, "message": "Authentication required"}
             )
         
-        auth_token = auth_header.replace("Bearer ", "")
+        access_token = auth_header.replace("Bearer ", "")
         
         if not fresh_bus_assistant.http_session:
             await fresh_bus_assistant.init_http_session()
@@ -5606,7 +5940,7 @@ async def get_trip_feedback(trip_id: str, request: Request):
         print(f"Fetching feedback questions for trip {trip_id}: {url}")
         
         headers = {
-            "Authorization": f"Bearer {auth_token}",
+            "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json"
         }
         
@@ -5677,7 +6011,7 @@ async def get_user_tickets(request: Request):
                 content={"success": False, "message": "Authentication required"}
             )
         
-        auth_token = auth_header.replace("Bearer ", "")
+        access_token = auth_header.replace("Bearer ", "")
         
         if not fresh_bus_assistant.http_session:
             await fresh_bus_assistant.init_http_session()
@@ -5687,7 +6021,7 @@ async def get_user_tickets(request: Request):
         print(f"Fetching user tickets: {url}")
         
         headers = {
-            "Authorization": f"Bearer {auth_token}",
+            "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json"
         }
         
@@ -5721,10 +6055,10 @@ async def get_active_tickets(request: Request):
                 content={"success": False, "message": "Authentication required"}
             )
         
-        auth_token = auth_header.replace("Bearer ", "")
+        access_token = auth_header.replace("Bearer ", "")
         
         # Fetch tickets
-        tickets = await fresh_bus_assistant.fetch_user_tickets(auth_token, force_refresh=True)
+        tickets = await fresh_bus_assistant.fetch_user_tickets(access_token, force_refresh=True)
         
         if not tickets:
             return JSONResponse(
@@ -5755,7 +6089,7 @@ async def get_feedback_questions(request: Request):
                 content={"success": False, "message": "Authentication required"}
             )
         
-        auth_token = auth_header.replace("Bearer ", "")
+        access_token = auth_header.replace("Bearer ", "")
         
         if not fresh_bus_assistant.http_session:
             await fresh_bus_assistant.init_http_session()
@@ -5765,7 +6099,7 @@ async def get_feedback_questions(request: Request):
         print(f"Fetching feedback questions: {url}")
         
         headers = {
-            "Authorization": f"Bearer {auth_token}",
+            "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json"
         }
         
@@ -5808,10 +6142,10 @@ async def get_bus_tracking(trip_id: str, request: Request):
             # Get auth token from headers
             auth_header = request.headers.get("Authorization")
             if auth_header and auth_header.startswith("Bearer "):
-                auth_token = auth_header.replace("Bearer ", "")
+                access_token = auth_header.replace("Bearer ", "")
                 
                 # Fetch NPS data for completed trips
-                nps_data = await fresh_bus_assistant.fetch_nps_data(trip_id, auth_token)
+                nps_data = await fresh_bus_assistant.fetch_nps_data(trip_id, access_token)
                 
                 # Add NPS data to response
                 if nps_data:
@@ -5828,33 +6162,169 @@ async def get_bus_tracking(trip_id: str, request: Request):
 
 @app.get("/profile")
 async def get_user_profile(request: Request):
-    """Get user profile data"""
-    try:
-        # Get the auth token from the request headers
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            return JSONResponse(
-                status_code=401,
-                content={"success": False, "message": "Authentication required"}
-            )
-        
+    """Get user profile data from backend api"""
+    # Debug request headers
+    print("REQUEST HEADERS:")
+    for header_name, header_value in request.headers.items():
+        print(f"  {header_name}: {header_value}")
+    
+    # Try to get auth token from Authorization header first
+    auth_token = None
+    auth_header = request.headers.get("Authorization")
+    
+    if auth_header and auth_header.startswith("Bearer "):
         auth_token = auth_header.replace("Bearer ", "")
+    
+    # If not found in header, try cookies
+    if not auth_token:
+        cookies = request.cookies
+        auth_token = cookies.get("access_token")
+    
+    if not auth_token:
+        print("Authorization token missing")
+        return JSONResponse(
+            status_code=401,
+            content={"error": "Authorization token required"}
+        )
+    
+    print(f"Extracted token: {auth_token[:10]}...")  # Only print first 10 chars
+    
+    session_id = request.query_params.get("session_id")
+    print(f"Session ID from query params: {session_id}")
+    
+    try:
+        if not fresh_bus_assistant.http_session:
+            await fresh_bus_assistant.init_http_session()
         
-        # Fetch profile data from Fresh Bus API
-        profile_data = await fresh_bus_assistant.fetch_user_profile(auth_token)
+        # Forward the request to the backend
+        profile_url = f"{fresh_bus_assistant.BASE_URL_CUSTOMER}/profile"
         
-        if not profile_data:
-            return JSONResponse(
-                status_code=404,
-                content={"success": False, "message": "Failed to fetch user profile"}
-            )
+        print(f"Forwarding request to: {profile_url}")
+        print(f"Using headers: Authorization: Bearer {auth_token[:10]}...")
         
-        return JSONResponse(content=profile_data)
+        async with fresh_bus_assistant.http_session.get(
+            profile_url,
+            headers={"Authorization": f"Bearer {auth_token}"}
+        ) as response:
+            if response.status == 200:
+                profile_data = await response.json()
+                print("Successfully fetched user profile")
+                print("\n==================================================")
+                print("                USER LOGIN DETECTED                ")
+                print("==================================================")
+                print(f"Mobile:     {profile_data.get('mobile', 'Unknown')}")
+                print(f"Name:       {profile_data.get('name', 'Unknown')}")
+                print(f"Email:      {profile_data.get('email', 'Unknown')}")
+                print(f"Gender:     {profile_data.get('gender', 'Unknown')}")
+                print(f"Login Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                print("==================================================")
+                
+                # Store profile in session if session_id provided
+                if session_id:
+                    try:
+                        session, _ = fresh_bus_assistant.get_or_create_session(session_id)
+                        
+                        if "context" not in session:
+                            session["context"] = {}
+                            
+                        session["context"]["user_profile"] = profile_data
+                        
+                        # Extract and store basic user info too
+                        mobile = profile_data.get("mobile")
+                        if mobile:
+                            session["context"]["user"] = {
+                                "mobile": mobile,
+                                "name": profile_data.get("name", ""),
+                                "email": profile_data.get("email", ""),
+                                "gender": profile_data.get("gender", "")
+                            }
+                            
+                            # Store auth token
+                            session["context"]["auth"] = {
+                                "token": auth_token
+                            }
+                            
+                            # Save to Redis - catching any errors
+                            try:
+                                # Use save_context from the conversation manager
+                                key = f"{conversation_manager.context_prefix}{session_id}"
+                                # Convert complex objects to strings for Redis
+                                serialized_context = {}
+                                for k, v in session["context"].items():
+                                    if isinstance(v, dict):
+                                        serialized_context[k] = json.dumps(v)
+                                    elif isinstance(v, (list, tuple)):
+                                        serialized_context[k] = json.dumps(v)
+                                    else:
+                                        serialized_context[k] = str(v)
+                                
+                                # Delete existing key first to avoid partial updates
+                                conversation_manager.redis.delete(key)
+                                
+                                # Set all values at once
+                                if serialized_context:
+                                    conversation_manager.redis.hmset(key, serialized_context)
+                                    
+                                # Set expiration for context data (7 days)
+                                conversation_manager.redis.expire(key, 7 * 86400)
+                                
+                                print(f"Successfully saved context to Redis for session {session_id}")
+                            except Exception as redis_err:
+                                print(f"Warning: Failed to save context to Redis: {redis_err}")
+                                import traceback
+                                traceback.print_exc()
+                            
+                            # Also store user profile separately for future reference
+                            try:
+                                # Store profile directly
+                                profile_key = f"fresh_bus:user_profile:{mobile}"
+                                profile_json = json.dumps(profile_data, default=str)
+                                conversation_manager.redis.setex(profile_key, 7 * 86400, profile_json)
+                                
+                                print(f"Successfully saved user profile to Redis for mobile {mobile}")
+                            except Exception as redis_err:
+                                print(f"Warning: Failed to save user profile to Redis: {redis_err}")
+                                import traceback
+                                traceback.print_exc()
+                    except Exception as session_err:
+                        print(f"Warning: Error updating session with profile data: {session_err}")
+                        print("\n=== Login Error ===")
+                        print(f"Error: {session_err}")
+                        print("=========================")
+                        import traceback
+                        traceback.print_exc()
+                        
+                # Add session_id to response
+                response_data = profile_data.copy()
+                if session_id:
+                    response_data["session_id"] = session_id
+                
+                return JSONResponse(content=response_data)
+            else:
+                error_text = await response.text()
+                print(f"Error fetching user profile: {response.status}")
+                print(f"Error response: {error_text}")
+                
+                print("\n=== Login Failed ===")
+                print(f"Error: {error_text}")
+                print("=========================")
+                
+                return JSONResponse(
+                    status_code=response.status,
+                    content={"error": f"Failed to fetch profile: {error_text}"}
+                )
     except Exception as e:
-        print(f"Error getting user profile: {e}")
+        print(f"Exception fetching user profile: {e}")
+        
+        print("\n=== Login Error ===")
+        print(f"Error: {str(e)}")
+        print("=========================")
+        import traceback
+        traceback.print_exc()
+        
         return JSONResponse(
             status_code=500,
-            content={"success": False, "message": f"Error fetching profile: {str(e)}"}
+            content={"error": f"Error fetching profile: {str(e)}"}
         )
 
 @app.post("/auth/sendotp")
@@ -5897,12 +6367,13 @@ async def send_otp(request: Request):
 
 @app.post("/auth/verifyotp")
 async def verify_otp(request: Request):
-    """Proxy endpoint to verify OTP and authenticate user"""
+    """Verify OTP and authenticate user"""
     try:
         body = await request.json()
         mobile = body.get("mobile")
         otp = body.get("otp")
         device_id = body.get("deviceId", "web_client")
+        session_id = body.get("session_id")
         
         if not mobile or not otp:
             return JSONResponse(
@@ -5910,48 +6381,216 @@ async def verify_otp(request: Request):
                 content={"success": False, "message": "Mobile number and OTP are required"}
             )
         
+        print(f"Verifying OTP for mobile: {mobile}, OTP: {otp}, Device ID: {device_id}")
+        
         # Forward request to Fresh Bus API
         api_url = f"{fresh_bus_assistant.BASE_URL}/auth/verifyotp"
+        print(f"Forwarding OTP verification to {api_url}")
         
         if not fresh_bus_assistant.http_session:
             await fresh_bus_assistant.init_http_session()
         
+        # Create headers for the request
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        
+        # Create the request body
+        request_body = {
+            "mobile": mobile,
+            "otp": otp,
+            "deviceId": device_id
+        }
+        
+        # Make the request
         async with fresh_bus_assistant.http_session.post(
             api_url,
-            json={"mobile": mobile, "otp": otp, "deviceId": device_id},
-            headers={"Content-Type": "application/json"}
+            json=request_body,
+            headers=headers
         ) as response:
-            response_data = await response.json()
+            # Log response info
+            print(f"OTP verification response status: {response.status}")
             
-            # Extract tokens from cookies
+            # Get the raw response text first
+            response_text = await response.text()
+            print(f"Raw response text: {response_text}")
+            
+            # Parse response data
+            try:
+                response_data = json.loads(response_text)
+                print(f"Parsed JSON response: {json.dumps(response_data, indent=2)}")
+            except json.JSONDecodeError:
+                print(f"Failed to parse response as JSON")
+                response_data = {"success": False, "message": "Invalid response from server"}
+            
+            # Extract token from response data
+            access_token = response_data.get("access_token")
+            refresh_token = response_data.get("refresh_token")
+            
+            # Check response headers for tokens
+            auth_header = response.headers.get("Authorization")
+            if auth_header and auth_header.startswith("Bearer "):
+                access_token = auth_header.replace("Bearer ", "")
+                print(f"Found access token in Authorization header: {access_token[:10]}...")
+            
+            # Extract cookies from response
             cookies = response.cookies
-            access_token = None
-            refresh_token = None
-            
             for cookie_name, cookie in cookies.items():
-                if cookie_name == "access_token":
+                print(f"Cookie: {cookie_name} = {cookie.value[:10]}..." if len(cookie.value) > 10 else f"Cookie: {cookie_name} = {cookie.value}")
+                if cookie_name == "access_token" and not access_token:
                     access_token = cookie.value
-                elif cookie_name == "refresh_token":
+                    print(f"Found access token in cookies: {access_token[:10]}...")
+                elif cookie_name == "refresh_token" and not refresh_token:
                     refresh_token = cookie.value
+                    print(f"Found refresh token in cookies: {refresh_token[:10]}...")
             
-            # If tokens exist in cookies but not in response, add them
-            if access_token and "access_token" not in response_data:
-                response_data["access_token"] = access_token
+            # If verification was successful
+            if response.status in [200, 201]:
+                # Add tokens to response data if they exist but aren't in the data
+                if access_token and "access_token" not in response_data:
+                    response_data["access_token"] = access_token
+                    print(f"Added access token to response data")
+                
+                if refresh_token and "refresh_token" not in response_data:
+                    response_data["refresh_token"] = refresh_token
+                    print(f"Added refresh token to response data")
+                
+                # Get or create session
+                session, new_session_id = fresh_bus_assistant.get_or_create_session(session_id)
+                
+                # Store user info in session
+                if "context" not in session:
+                    session["context"] = {}
+                
+                # Use token from response data if available
+                final_access_token = response_data.get("access_token", access_token)
+                final_refresh_token = response_data.get("refresh_token", refresh_token)
+                
+                if final_access_token:
+                    print(f"Final access token: {final_access_token[:10]}...")
+                else:
+                    print("WARNING: No access token found!")
+
+                if final_access_token:
+                    print(f"final_refresh_token: {final_refresh_token[:10]}...")
+                else:
+                    print("WARNING: No refresh token found!")
+                
+                session["context"]["user"] = {
+                    "mobile": mobile,
+                    "name": response_data.get("name", ""),
+                    "email": response_data.get("email", ""),
+                    "id": response_data.get("id", "")
+                }
+                
+                # Store auth info in session
+                session["context"]["auth"] = {
+                    "token": final_access_token,
+                    "refresh_token": final_refresh_token
+                }
+                
+                # Add session_id to response
+                response_data["session_id"] = new_session_id
+                
+                print(f"=== USER AUTHENTICATED ===")
+                print(f"Mobile: {mobile}")
+                print(f"Session ID: {new_session_id}")
+                print(f"Access Token: {final_access_token[:10]}..." if final_access_token else "None")
+                print(f"=========================")
+                
+                # Create response with data in body
+                response_obj = JSONResponse(content=response_data)
+                
+                # Add Authorization header to response
+                if final_access_token:
+                    response_obj.headers["Authorization"] = f"Bearer {final_access_token}"
+                    response_obj.headers["X-Access-Token"] = final_access_token
+                    response_obj.headers["access_token"] = final_access_token
+                
+                if final_refresh_token:
+                    response_obj.headers["refresh_token"] = final_refresh_token
+                
+                # Set response headers for CORS
+                response_obj.headers["Access-Control-Allow-Origin"] = "http://localhost:5173"
+                response_obj.headers["Access-Control-Allow-Credentials"] = "true"
+                response_obj.headers["Access-Control-Expose-Headers"] = "Authorization, X-Access-Token, access_token, refresh_token, Set-Cookie"
+                
+                # Set cookies properly for browser storage
+                if final_access_token:
+                    # Get cookie attributes if available from original response
+                    max_age_access = 900  # Default to 15 minutes
+                    path_access = "/"
+                    same_site_access = "lax"
+                    http_only_access = True
+                    
+                    # Check if we have cookie info from the original response
+                    access_cookie = next((c for c in cookies.values() if c.key == "access_token"), None)
+                    if access_cookie:
+                        if "max-age" in access_cookie:
+                            max_age_access = int(access_cookie["max-age"])
+                        if "path" in access_cookie:
+                            path_access = access_cookie["path"]
+                        if "samesite" in access_cookie:
+                            same_site_access = access_cookie["samesite"]
+                        if "httponly" in access_cookie:
+                            http_only_access = bool(access_cookie["httponly"])
+                    
+                    # Set the access token cookie
+                    response_obj.set_cookie(
+                        key="access_token",
+                        value=final_access_token,
+                        max_age=max_age_access,
+                        path=path_access,
+                        samesite=same_site_access,
+                        httponly=http_only_access,
+                        secure=False  # Set to True in production with HTTPS
+                    )
+                    print(f"Set access_token cookie with max_age={max_age_access}")
+                
+                if final_refresh_token:
+                    # Get cookie attributes if available from original response
+                    max_age_refresh = 604800  # Default to 7 days
+                    path_refresh = "/"
+                    same_site_refresh = "lax"
+                    http_only_refresh = True
+                    
+                    # Check if we have cookie info from the original response
+                    refresh_cookie = next((c for c in cookies.values() if c.key == "refresh_token"), None)
+                    if refresh_cookie:
+                        if "max-age" in refresh_cookie:
+                            max_age_refresh = int(refresh_cookie["max-age"])
+                        if "path" in refresh_cookie:
+                            path_refresh = refresh_cookie["path"]
+                        if "samesite" in refresh_cookie:
+                            same_site_refresh = refresh_cookie["samesite"]
+                        if "httponly" in refresh_cookie:
+                            http_only_refresh = bool(refresh_cookie["httponly"])
+                    
+                    # Set the refresh token cookie
+                    response_obj.set_cookie(
+                        key="refresh_token",
+                        value=final_refresh_token,
+                        max_age=max_age_refresh,
+                        path=path_refresh,
+                        samesite=same_site_refresh,
+                        httponly=http_only_refresh,
+                        secure=False  # Set to True in production with HTTPS
+                    )
+                    print(f"Set refresh_token cookie with max_age={max_age_refresh}")
+                
+                return response_obj
             
-            if refresh_token and "refresh_token" not in response_data:
-                response_data["refresh_token"] = refresh_token
-            
-            # Add user details if available
-            if "user" not in response_data:
-                response_data["user"] = {"mobile": mobile}
-            
-            # Return the response data
+            # If verification failed
             return JSONResponse(
                 status_code=response.status,
                 content=response_data
             )
+                
     except Exception as e:
-        print(f"Error verifying OTP: {e}")
+        print(f"Error in verify_otp: {e}")
+        import traceback
+        traceback.print_exc()
         return JSONResponse(
             status_code=500,
             content={"success": False, "message": f"Error verifying OTP: {str(e)}"}
@@ -6110,18 +6749,410 @@ async def initialize(request: InitializeRequest):
 async def query(request: Request):
     try:
         body = await request.json()
-        query = body.get("query")
+        query = body.get("query", "")
         session_id = body.get("session_id")
-        user_id = body.get("user_id")  # Added user_id parameter
+        user_id = body.get("user_id")
         provider = body.get("provider")
         model = body.get("model")
+        user_gender = body.get("gender")
+        user_location = body.get("location")
+        detected_language = body.get("language")
+        
+        print(f"--- New Query: '{query}' ---")
+        
+        # Get access token from multiple sources (prioritize cookies)
+        access_token = None
+        # Initialize refresh_token variable
+        refresh_token = None
+        
+        # 1. Check cookies first (most reliable source)
+        if "access_token" in request.cookies:
+            access_token = request.cookies.get("access_token")
+            print(f"Found access token in cookies: {access_token[:10]}...")
+        
+        # 2. Check Authorization header
+        if not access_token:
+            auth_header = request.headers.get("Authorization")
+            if auth_header and auth_header.startswith("Bearer ") and auth_header != "Bearer undefined":
+                access_token = auth_header.replace("Bearer ", "")
+                print(f"Found access token in Authorization header: {access_token[:10]}...")
+        
+        # 3. Check custom headers
+        if not access_token:
+            access_token = request.headers.get("X-Access-Token") or request.headers.get("access_token")
+            if access_token:
+                print(f"Found access token in custom header: {access_token[:10]}...")
+        
+        # 4. Check request body
+        if not access_token and "access_token" in body:
+            access_token = body.get("access_token")
+            if access_token:
+                print(f"Found access token in request body: {access_token[:10]}...")
+        
+        # Get refresh token from multiple sources
+        # 1. Check cookies for refresh token
+        if "refresh_token" in request.cookies:
+            refresh_token = request.cookies.get("refresh_token")
+            print(f"Found refresh token in cookies: {refresh_token[:10]}...")
+        
+        # 2. Check headers for refresh token
+        if not refresh_token:
+            refresh_header = request.headers.get("refresh_token") or request.headers.get("X-Refresh-Token")
+            if refresh_header:
+                refresh_token = refresh_header
+                print(f"Found refresh token in header: {refresh_token[:10]}...")
+        
+        # 3. Check request body for refresh token
+        if not refresh_token and "refresh_token" in body:
+            refresh_token = body.get("refresh_token")
+            if refresh_token:
+                print(f"Found refresh token in request body: {refresh_token[:10]}...")
+        
+        # Get or create session early so we can use it for token storage
+        session, session_id = fresh_bus_assistant.get_or_create_session(session_id)
+        print(f"Using {'existing' if 'messages' in session else 'new'} session with ID: {session_id}")
+        
+        # Print session info for debugging
+        if session_id and session_id in fresh_bus_assistant.sessions:
+            print(f"Current session messages count: {len(fresh_bus_assistant.sessions[session_id]['messages'])}")
+            for i, msg in enumerate(fresh_bus_assistant.sessions[session_id]['messages'][-2:]):  # Show last 2 messages
+                preview = msg.get('content', '')[:30] + '...' if len(msg.get('content', '')) > 30 else msg.get('content', '')
+                print(f"Message {i}: {msg.get('role')} - {preview}")
+        
+        # 5. Check session data for access token
+        if not access_token:
+            if session.get("context") and session["context"].get("auth") and session["context"]["auth"].get("token"):
+                access_token = session["context"]["auth"]["token"]
+                print(f"Found access token in session: {access_token[:10]}...")
+        
+        # Initialize context and auth objects if they don't exist or are None
+        if "context" not in session:
+            session["context"] = {}
+        
+        if "auth" not in session["context"] or session["context"]["auth"] is None:
+            session["context"]["auth"] = {}  # Reset to empty dict if it's None
+            print("Initialized auth object in session")
+        
+        # Check session for refresh token
+        if not refresh_token and session.get("context") and session["context"].get("auth") and session["context"]["auth"].get("refresh_token"):
+            refresh_token = session["context"]["auth"]["refresh_token"]
+            print(f"Found refresh token in session: {refresh_token[:10]}...")
+        
+        # Log if no token found
+        if not access_token:
+            print("No access token found in request")
+        
+        # Verify token validity and refresh if needed
+        # new verification using our cookie‑aware helper
+        token_valid = False
+        if access_token:
+            try:
+                # Pass BOTH tokens to fetch_user_profile
+                profile_data = await fresh_bus_assistant.fetch_user_profile(access_token, refresh_token)
+                if profile_data:
+                    print("✅ Token verification successful!")
+                    token_valid = True
+                    user_authenticated = True
 
+                    # Update session with profile data
+                    if "context" not in session:
+                        session["context"] = {}
+                    
+                    # Store complete user data
+                    session["context"]["user"] = {
+                        "id": profile_data.get("id"),
+                        "name": profile_data.get("name"),
+                        "mobile": profile_data.get("mobile"),
+                        "email": profile_data.get("email"),
+                        "gender": profile_data.get("gender"),
+                        "profile": profile_data  # Store complete profile
+                    }
+
+                    # Store auth tokens
+                    session["context"]["auth"] = {
+                        "token": access_token,
+                        "refresh_token": refresh_token
+                    }
+
+                    print(f"Updated session with user profile data for {profile_data.get('name')}")
+                else:
+                    print("❌ Token verification failed, attempting refresh")
+                    if refresh_token:
+                        # Implement refresh logic here if needed
+                        pass
+            except Exception as e:
+                print(f"Error verifying token: {e}")
+                token_valid = False
+        
+        # If token is invalid and we have a refresh token, try to refresh
+        if not token_valid and refresh_token:
+            print("Token is invalid. Attempting to refresh...")
+            try:
+                # Call the refresh token API
+                refresh_url = f"{fresh_bus_assistant.BASE_URL}/auth/refresh"
+                
+                async with fresh_bus_assistant.http_session.post(
+                    refresh_url,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {refresh_token}"
+                    },
+                    json={"refresh_token": refresh_token}
+                ) as refresh_response:
+                    if refresh_response.status == 200:
+                        refresh_data = await refresh_response.json()
+                        new_access_token = refresh_data.get("access_token")
+                        
+                        if new_access_token:
+                            print(f"Token refreshed successfully! New token: {new_access_token[:10]}...")
+                            access_token = new_access_token
+                            token_valid = True
+                            
+                            # Update session with new token
+                            session["context"]["auth"]["token"] = new_access_token
+                            if refresh_data.get("refresh_token"):
+                                session["context"]["auth"]["refresh_token"] = refresh_data.get("refresh_token")
+                    else:
+                        print(f"Failed to refresh token: {refresh_response.status}")
+            except Exception as refresh_error:
+                print(f"Error refreshing token: {refresh_error}")
+
+        # Validate query
         if not query:
             return JSONResponse(
                 status_code=400,
                 content={"error": "Query is required"}
             )
+        
+        # Update token in session if we have one
+        if access_token:
+            # Store or update the access token
+            session["context"]["auth"]["token"] = access_token
+            
+            # Store refresh token if available
+            if refresh_token:
+                session["context"]["auth"]["refresh_token"] = refresh_token
+            
+            print(f"Updated auth tokens in session")
+        
+        # Determine if this is a simple query
+        is_simple_query = query.lower() in ["hi", "hello", "hey"] or "name" in query.lower() or "who are you" in query.lower()
+        print(f"Is simple query: {is_simple_query}")
+        
+        # Check if this is a tracking request
+        is_tracking_request = fresh_bus_assistant.is_bus_tracking_query(query)
+        print(f"Is tracking request: {is_tracking_request}")
+        
+        # Detect language
+        language = detected_language or fresh_bus_assistant.detect_language(query)
+        print(f"Language detected/set: {language}")
+        
+        # Extract locations if present in query
+        source, destination = fresh_bus_assistant.extract_locations(query)
+        if source and destination:
+            print(f"Extracted locations: {source} to {destination}")
+            # Add to logs for debugging
+            if source and destination:
+                print(f"Extracted from 'to-from' pattern: FROM {source} TO {destination}")
+        
+        # Special handling for tracking requests
+        if is_tracking_request:
+            print("Handling bus tracking request")
+            
+            # Check if user is authenticated with a valid token
+            user_authenticated = token_valid
+            
+            if user_authenticated:
+                print(f"User is authenticated, fetching ticket data with token: {access_token[:10]}..." if access_token else "Token not available")
+                # Add user message to session
+                if "messages" not in session:
+                    session["messages"] = []
+                session["messages"].append({"role": "user", "content": query})
+                
+                # Use the authenticated flow to get user's tickets and bus location
+                tracking_response = await fresh_bus_assistant.handle_authenticated_tracking_request(access_token)
+                
+                # Add response to session
+                session["messages"].append({"role": "assistant", "content": tracking_response})
+            else:
+                print("User is not authenticated, providing login instructions")
+                tracking_response = "I need to see your active tickets to track your bus. Please log in to your Fresh Bus account first, then I can show you your bus location, estimated arrival time, and journey status.\n\nAfter logging in, you can ask me 'Where is my bus?' again, and I'll provide real-time tracking information."
+                
+                # Add message to session
+                if "messages" not in session:
+                    session["messages"] = []
+                session["messages"].append({"role": "user", "content": query})
+                session["messages"].append({"role": "assistant", "content": tracking_response})
+            
+            # Save to Redis if possible
+            try:
+                conversation_id = conversation_manager.save_conversation(
+                    session_id, 
+                    session["messages"],
+                    user_id=user_id
+                )
+                print(f"Saved tracking response to Redis: {conversation_id}")
+            except Exception as redis_err:
+                print(f"Failed to save to Redis: {redis_err}")
+                conversation_id = None
+                
+            # Stream the response
+            async def tracking_stream():
+                # Send the text chunk
+                yield f"data: {json.dumps({'text': tracking_response, 'done': False})}\n\n"
+                
+                # Send the completion chunk with metadata
+                yield f"data: {json.dumps({
+                    'text': '',
+                    'done': True,
+                    'session_id': session_id,
+                    'language_style': 'english',
+                    'conversation_id': conversation_id,
+                    'access_token': access_token  # Include token in the final chunk
+                })}\n\n"
+                
+            response = StreamingResponse(
+                tracking_stream(),
+                media_type="text/event-stream",
+                headers={
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                    'X-Accel-Buffering': 'no'
+                }
+            )
+            
+            # Add auth headers if available
+            if access_token:
+                response.headers["Authorization"] = f"Bearer {access_token}"
+                response.headers["X-Access-Token"] = access_token
+                response.headers["access_token"] = access_token
+                
+                # Also set cookie for access token
+                response.set_cookie(
+                    key="access_token",
+                    value=access_token,
+                    httponly=True,
+                    secure=False,  # Set to True in production
+                    samesite="lax",
+                    path="/",
+                    max_age=900  # 15 minutes
+                )
+            
+            # Set refresh token cookie if available
+            if refresh_token:
+                response.set_cookie(
+                    key="refresh_token",
+                    value=refresh_token,
+                    httponly=True,
+                    secure=False,  # Set to True in production
+                    samesite="lax",
+                    path="/",
+                    max_age=604800  # 7 days
+                )
+            
+            # Add CORS headers
+            response.headers["Access-Control-Allow-Origin"] = "http://localhost:5173"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Expose-Headers"] = "Authorization, X-Access-Token, access_token, refresh_token, Set-Cookie"
+            
+            return response
 
+        # For simple greetings
+        if is_simple_query:
+            print("Handling simple greeting")
+            # Create a simple greeting response
+            if query.lower() in ["hi", "hello", "hey"]:
+                greeting_text = "Hello! I'm Ṧ.AI, your Fresh Bus travel assistant. How can I help you today?"
+            elif "name" in query.lower():
+                greeting_text = "My name is Ṧ.AI (pronounced as 'Sai'). I'm your Fresh Bus travel assistant. How can I help you today?"
+            else:
+                greeting_text = "Hello! I'm Ṧ.AI, your Fresh Bus travel assistant. How can I help you with your bus travel needs?"
+            
+            # Add messages to the session
+            if "messages" not in session:
+                session["messages"] = []
+            
+            session["messages"].append({"role": "user", "content": query})
+            session["messages"].append({"role": "assistant", "content": greeting_text})
+            
+            # Save to Redis if possible
+            try:
+                user_mobile = None
+                if session.get("context") and isinstance(session["context"].get("user"), dict):
+                    user_mobile = session["context"]["user"].get("mobile")
+                
+                conversation_id = conversation_manager.save_conversation(
+                    session_id, 
+                    session["messages"],
+                    user_id=user_mobile or user_id
+                )
+                print(f"Saved greeting response to Redis: {conversation_id}, user mobile: {user_mobile}")
+            except Exception as redis_err:
+                print(f"Failed to save greeting to Redis: {redis_err}")
+                conversation_id = None
+
+            # Stream the response as SSE
+            async def simple_stream():
+                # Send the text chunk
+                yield f"data: {json.dumps({'text': greeting_text, 'done': False})}\n\n"
+                
+                # Send the completion chunk with metadata
+                yield f"data: {json.dumps({
+                    'text': '', 
+                    'done': True, 
+                    'session_id': session_id,
+                    'language_style': 'english',
+                    'conversation_id': conversation_id,
+                    'access_token': access_token  # Include token in the final chunk
+                })}\n\n"
+                
+            response = StreamingResponse(
+                simple_stream(),
+                media_type="text/event-stream",
+                headers={
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                    'X-Accel-Buffering': 'no'
+                }
+            )
+            
+            # Add auth headers if available
+            if access_token:
+                response.headers["Authorization"] = f"Bearer {access_token}"
+                response.headers["X-Access-Token"] = access_token
+                response.headers["access_token"] = access_token
+                
+                # Also set cookie for access token
+                response.set_cookie(
+                    key="access_token",
+                    value=access_token,
+                    httponly=True,
+                    secure=False,  # Set to True in production
+                    samesite="lax",
+                    path="/",
+                    max_age=900  # 15 minutes
+                )
+            
+            # Set refresh token cookie if available
+            if refresh_token:
+                response.set_cookie(
+                    key="refresh_token",
+                    value=refresh_token,
+                    httponly=True,
+                    secure=False,  # Set to True in production
+                    samesite="lax",
+                    path="/",
+                    max_age=604800  # 7 days
+                )
+            
+            # Add CORS headers
+            response.headers["Access-Control-Allow-Origin"] = "http://localhost:5173"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Expose-Headers"] = "Authorization, X-Access-Token, access_token, refresh_token, Set-Cookie"
+            
+            return response
+
+        # Normal response flow for other queries
         # Build parameters object for generate_response
         params = {
             "query": query,
@@ -6131,16 +7162,20 @@ async def query(request: Request):
         }
         
         # Add user location if available
-        if body.get("location"):
-            params["user_location"] = body.get("location")
+        if user_location:
+            params["user_location"] = user_location
         
         # Add gender if available
-        if body.get("gender"):
-            params["user_gender"] = body.get("gender")
+        if user_gender:
+            params["user_gender"] = user_gender
         
         # Add detected language if available
-        if body.get("language"):
-            params["detected_language"] = body.get("language")
+        if detected_language:
+            params["detected_language"] = detected_language
+
+        # Pass the access token to generate_response
+        if access_token:
+            params["access_token"] = access_token
 
         # Generate response
         response_generator = fresh_bus_assistant.generate_response(**params)
@@ -6148,6 +7183,14 @@ async def query(request: Request):
         async def stream_response():
             try:
                 async for chunk in response_generator:
+                    # Debug the type of chunk
+                    if isinstance(chunk, dict):
+                        chunk_preview = json.dumps(chunk)[:100] + "..." if len(json.dumps(chunk)) > 100 else json.dumps(chunk)
+                        print(f"OUTPUT CHUNK: {chunk_preview}")
+                    else:
+                        chunk_preview = str(chunk)[:100] + "..." if len(str(chunk)) > 100 else str(chunk)
+                        print(f"OUTPUT CHUNK: {chunk_preview}")
+                    
                     # Parse the chunk if it's a string
                     if isinstance(chunk, str):
                         try:
@@ -6165,29 +7208,57 @@ async def query(request: Request):
                         return
                     
                     # If this is the final chunk with done=True
-                    if chunk.get("done") and "conversation_id" in chunk:
-                        # If we have user_id and a new conversation was created
-                        if user_id and chunk.get("conversation_id"):
-                            try:
-                                # Associate the conversation with the user
-                                conversation_manager.redis.sadd(
-                                    f"{conversation_manager.user_index_prefix}{user_id}", 
-                                    chunk.get("conversation_id")
-                                )
-                                # Add user_id to the conversation data
-                                conversation_key = f"{conversation_manager.conversation_prefix}{chunk.get('conversation_id')}"
-                                conversation_manager.redis.hset(conversation_key, "user_id", user_id)
-                                print(f"Associated conversation {chunk.get('conversation_id')} with user {user_id}")
-                            except Exception as e:
-                                print(f"Error associating conversation with user: {e}")
-                    
-                    yield f"data: {json.dumps(chunk)}\n\n"
+                    if chunk.get("done"):
+                        # Ensure we preserve json_data if it exists
+                        if "json_data" in chunk:
+                            # Make sure json_data field is properly passed to the frontend
+                            final_chunk = {
+                                "text": "", 
+                                "done": True,
+                                "session_id": chunk.get("session_id", session_id),
+                                "language_style": chunk.get("language_style", "english"),
+                                "conversation_id": chunk.get("conversation_id"),
+                                "json_data": chunk["json_data"]  # Keep the JSON data
+                            }
+                            
+                            # Include access token if available
+                            if access_token:
+                                final_chunk["access_token"] = access_token
+                                
+                            # Associate conversation with user if needed
+                            if user_id and final_chunk.get("conversation_id"):
+                                try:
+                                    # Associate the conversation with the user
+                                    conversation_manager.redis.sadd(
+                                        f"{conversation_manager.user_index_prefix}{user_id}", 
+                                        final_chunk.get("conversation_id")
+                                    )
+                                    # Add user_id to the conversation data
+                                    conversation_key = f"{conversation_manager.conversation_prefix}{final_chunk.get('conversation_id')}"
+                                    conversation_manager.redis.hset(conversation_key, "user_id", user_id)
+                                    print(f"Associated conversation {final_chunk.get('conversation_id')} with user {user_id}")
+                                except Exception as e:
+                                    print(f"Error associating conversation with user: {e}")
+                            
+                            # Send the final chunk with json_data
+                            print(f"Sending final chunk with json_data: {json.dumps(final_chunk)[:100]}...")
+                            yield f"data: {json.dumps(final_chunk)}\n\n"
+                        else:
+                            # Standard final chunk without json_data
+                            chunk["access_token"] = access_token if access_token else None
+                            yield f"data: {json.dumps(chunk)}\n\n"
+                    else:
+                        # Send normal text chunk
+                        yield f"data: {json.dumps(chunk)}\n\n"
             except Exception as e:
                 error_msg = f"Error in stream_response: {str(e)}"
                 print(error_msg)
+                import traceback
+                traceback.print_exc()
                 yield f"data: {json.dumps({'error': error_msg, 'done': True})}\n\n"
 
-        return StreamingResponse(
+        # Create response with headers
+        response = StreamingResponse(
             stream_response(),
             media_type="text/event-stream",
             headers={
@@ -6196,10 +7267,210 @@ async def query(request: Request):
                 'X-Accel-Buffering': 'no'
             }
         )
+        
+        # Add auth headers if available
+        if access_token:
+            response.headers["Authorization"] = f"Bearer {access_token}"
+            response.headers["X-Access-Token"] = access_token
+            response.headers["access_token"] = access_token
+            
+            # Set cookie for access token
+            response.set_cookie(
+                key="access_token",
+                value=access_token,
+                httponly=True,
+                secure=False,  # Set to True in production
+                samesite="lax",
+                path="/",
+                max_age=900  # 15 minutes
+            )
+        
+        # Set refresh token cookie if available
+        if refresh_token:
+            response.set_cookie(
+                key="refresh_token",
+                value=refresh_token,
+                httponly=True,
+                secure=False,  # Set to True in production
+                samesite="lax",
+                path="/",
+                max_age=604800  # 7 days
+            )
+        
+        # Add CORS headers
+        response.headers["Access-Control-Allow-Origin"] = "http://localhost:5173"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Expose-Headers"] = "Authorization, X-Access-Token, access_token, refresh_token, Set-Cookie"
+        
+        return response
+        
     except Exception as e:
+        print(f"Error in query: {e}")
+        import traceback
+        traceback.print_exc()
         return JSONResponse(
             status_code=500,
             content={"error": str(e)}
+        )
+    
+@app.get("/auth/status")
+async def auth_status(request: Request):
+    """Check authentication status and return user info if authenticated"""
+    # Get token from request
+    auth_header = request.headers.get("Authorization")
+    access_token = None
+    
+    if auth_header and auth_header.startswith("Bearer ") and auth_header != "Bearer undefined":
+        access_token = auth_header.replace("Bearer ", "")
+    
+    # Check custom header
+    if not access_token:
+        access_token = request.headers.get("X-Access-Token") or request.headers.get("access_token")
+    
+    # Check session
+    session_id = request.query_params.get("session_id")
+    if not access_token and session_id:
+        session, _ = fresh_bus_assistant.get_or_create_session(session_id)
+        if session.get("context") and session["context"].get("auth"):
+            access_token = session["context"]["auth"].get("token")
+    
+    # If we have a token, verify it
+    if access_token:
+        try:
+            profile_url = f"{fresh_bus_assistant.BASE_URL_CUSTOMER}/profile"
+            
+            async with fresh_bus_assistant.http_session.get(
+                profile_url,
+                headers={"Authorization": f"Bearer {access_token}"}
+            ) as profile_response:
+                if profile_response.status == 200:
+                    profile_data = await profile_response.json()
+                    
+                    # Create response
+                    response = JSONResponse(content={
+                        "authenticated": True,
+                        "user": profile_data,
+                        "token": access_token
+                    })
+                    
+                    # Add auth headers
+                    response.headers["Authorization"] = f"Bearer {access_token}"
+                    response.headers["X-Access-Token"] = access_token
+                    response.headers["access_token"] = access_token
+                    
+                    # CORS headers
+                    response.headers["Access-Control-Allow-Origin"] = "http://localhost:5173"
+                    response.headers["Access-Control-Allow-Credentials"] = "true"
+                    response.headers["Access-Control-Expose-Headers"] = "Authorization, X-Access-Token, access_token"
+                    
+                    return response
+                else:
+                    return JSONResponse(content={
+                        "authenticated": False,
+                        "message": "Invalid or expired token"
+                    })
+        except Exception as e:
+            print(f"Error verifying token: {e}")
+            return JSONResponse(content={
+                "authenticated": False,
+                "error": str(e)
+            })
+    
+    return JSONResponse(content={
+        "authenticated": False,
+        "message": "No authentication token found"
+    })
+
+@app.get("/user/conversations")
+async def get_user_conversations(
+    request: Request,
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0)
+):
+    """Get conversations for the authenticated user"""
+    try:
+        # 1. Extract access token
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return JSONResponse(status_code=401, content={"error": "Authentication required"})
+        access_token = auth_header.replace("Bearer ", "")
+
+        # 2. Extract refresh token
+        refresh_token = None
+        if "refresh_token" in request.cookies:
+            refresh_token = request.cookies.get("refresh_token")
+        elif request.headers.get("X-Refresh-Token"):
+            refresh_token = request.headers.get("X-Refresh-Token")
+        elif request.headers.get("refresh_token"):
+            refresh_token = request.headers.get("refresh_token")
+
+        # 3. Ensure HTTP session
+        if not fresh_bus_assistant.http_session:
+            await fresh_bus_assistant.init_http_session()
+
+        # 4. Fetch profile
+        profile_data = await fresh_bus_assistant.fetch_user_profile(access_token, refresh_token)
+        if not profile_data:
+            return JSONResponse(status_code=404, content={"error": "User profile not found"})
+
+        # 5. Determine user_id
+        user_id = str(profile_data.get("id", "") or profile_data.get("mobile", ""))
+        if not user_id:
+            return JSONResponse(status_code=400, content={"error": "User ID not found in profile"})
+
+        print(f"Fetching conversations for user ID: {user_id}")
+
+        # 6. Retrieve and return
+        conversations = conversation_manager.get_conversations_by_user(user_id, limit, offset)
+        return JSONResponse(content=conversations)
+
+    except Exception as e:
+        print(f"Error getting user conversations: {e}")
+        return JSONResponse(status_code=500, content={"error": f"Error retrieving conversations: {str(e)}"})
+
+    
+@app.delete("/user/conversations")
+async def delete_user_conversations(request: Request):
+    """Delete all conversations for the authenticated user"""
+    try:
+        # 1. Extract access token
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return JSONResponse(status_code=401, content={"error": "Authentication required"})
+        access_token = auth_header.replace("Bearer ", "")
+
+        # 2. Extract refresh token
+        refresh_token = None
+        if "refresh_token" in request.cookies:
+            refresh_token = request.cookies.get("refresh_token")
+        elif request.headers.get("X-Refresh-Token"):
+            refresh_token = request.headers.get("X-Refresh-Token")
+        elif request.headers.get("refresh_token"):
+            refresh_token = request.headers.get("refresh_token")
+
+        # 3. Ensure HTTP session exists
+        if not fresh_bus_assistant.http_session:
+            await fresh_bus_assistant.init_http_session()
+
+        # 4. Fetch profile using both tokens
+        profile_data = await fresh_bus_assistant.fetch_user_profile(access_token, refresh_token)
+        if not profile_data:
+            return JSONResponse(status_code=404, content={"error": "User profile not found"})
+
+        # 5. Determine user_id
+        user_id = str(profile_data.get("id") or profile_data.get("mobile") or "")
+        if not user_id:
+            return JSONResponse(status_code=400, content={"error": "User ID not found in profile"})
+
+        # 6. Delete conversations
+        count = conversation_manager.delete_user_conversations(user_id)
+        return JSONResponse(content={"status": "success", "message": f"Deleted {count} conversations"})
+
+    except Exception as e:
+        print(f"Error deleting user conversations: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Error deleting conversations: {str(e)}"}
         )
 
 @app.get("/trips/{trip_id}/boarding-points/{source_id}")
@@ -6299,7 +7570,7 @@ async def book_ticket(request: Request):
                 content={"success": False, "message": "Authentication required"}
             )
         
-        auth_token = auth_header.replace("Bearer ", "")
+        access_token = auth_header.replace("Bearer ", "")
         
         # Initialize HTTP session if needed
         if not fresh_bus_assistant.http_session:
@@ -6335,7 +7606,7 @@ async def book_ticket(request: Request):
         booking_url = f"{fresh_bus_assistant.BASE_URL}/bookings"
         
         headers = {
-            "Authorization": f"Bearer {auth_token}",
+            "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json"
         }
         

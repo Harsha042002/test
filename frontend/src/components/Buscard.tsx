@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Bus, Check, ChevronDown, Loader2, Clock, User, Phone, Mail, Star } from 'lucide-react';
+import { ChevronDown, Loader2, Star } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { BusRoute, Seat, LocationPoint, FareDetails } from '../types';
 
@@ -32,7 +32,6 @@ export function BusCard({
   allDroppingPoints = [],
   userProfile
 }: BusCardProps) {
-  const [expanded, setExpanded] = useState(false);
   const [selectedSeat, setSelectedSeat] = useState<Seat | null>(null);
   const [isBoardingOpen, setIsBoardingOpen] = useState(false);
   const [isDroppingOpen, setIsDroppingOpen] = useState(false);
@@ -41,6 +40,11 @@ export function BusCard({
   const [confirmStep, setConfirmStep] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
+const [isCardBodyVisible, setIsCardBodyVisible] = useState(false); // State to toggle card body visibility
+
+  const toggleCardBody = () => {
+    setIsCardBodyVisible(!isCardBodyVisible);
+  };
 
   // Get formatted boarding and dropping points for display
   useEffect(() => {
@@ -115,7 +119,7 @@ export function BusCard({
 
   const handleSeatClick = (seat: Seat) => {
     setSelectedSeat(seat);
-    setExpanded(true);
+    setConfirmStep(true);
   };
 
   const handleProceedClick = () => {
@@ -322,11 +326,11 @@ export function BusCard({
           className="w-full mt-1 px-3 py-2 bg-gray-50 dark:bg-gray-700 flex justify-between items-center rounded-lg text-left border border-gray-200 dark:border-gray-600 transition-colors hover:bg-gray-100 dark:hover:bg-gray-600"
         >
           <div>
-            <p className="text-base text-gray-900 dark:text-gray-100 leading-tight">
+            <p className="text-sm text-gray-900 dark:text-gray-100 leading-tight">
               {selectedPoint ? selectedPoint.name : 'Select Location'}
             </p>
             {selectedPoint && selectedPoint.landmark && (
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
                 {selectedPoint.landmark}
               </p>
             )}
@@ -348,10 +352,10 @@ export function BusCard({
               >
                 <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{point.name}</p>
                 {point.landmark && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{point.landmark}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{point.landmark}</p>
                 )}
                 {point.time && (
-                  <p className="text-xs text-blue-500 dark:text-blue-400">{point.time}</p>
+                  <p className="text-sm text-blue-500 dark:text-blue-400">{point.time}</p>
                 )}
               </button>
             ))}
@@ -362,107 +366,80 @@ export function BusCard({
   };
 
   return (
-    <div className={`bg-white dark:bg-gray-800 shadow-md rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 transition-all duration-200 ${expanded ? 'pb-4' : ''}`}>
-      {/* Bus header */}
-      <div className="px-4 py-4 flex justify-between items-center">
-        <div className="flex items-center">
-          <div className="bg-yellow-100 dark:bg-yellow-900 p-2 rounded-full mr-3">
-            <Bus className="h-5 w-5 text-yellow-500 dark:text-yellow-400" />
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{from} to {to}</h3>
-            <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 mt-1">
-              <div className="flex items-center">
-                <Star className="h-3 w-3 text-yellow-500 mr-1" />
-                <span>{rating.toFixed(1)}</span>
-              </div>
-              <span className="mx-2">•</span>
-              <span>{duration}</span>
-            </div>
-          </div>
-        </div>
-        <button 
-          onClick={() => setExpanded(!expanded)}
-          className="bg-yellow-100 dark:bg-gray-700 text-yellow-600 dark:text-yellow-400 p-2 rounded-lg text-sm font-medium flex items-center space-x-1"
-        >
-          <span>{expanded ? 'Hide' : 'Select'}</span>
-        </button>
+    <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 transition-all duration-200">
+     {/* Bus header */}
+<div className="w-full px-2 py-2 flex justify-between items-center bg-[#1765F3]">
+  <div>
+    <h3 className="text-lg sm:text-xl md:text-2xl lg:text-lg xl:text-lg font-semibold text-white">
+      {from} to {to}
+    </h3>
+    <div className="flex justify-between items-center mt-1">
+      {/* Star and Rating */}
+      <div className="flex items-center gap-1">
+        <Star className="h-3 w-3 sm:h-4 sm:w-4 md:h-5 md:w-5 text-[#FBE822] fill-current mr-1" />
+        <span className="text-sm sm:text-base md:text-lg lg:text-lg xl:text-lg text-white">
+          {rating.toFixed(1)}
+        </span>
       </div>
-      
-      {/* Bus details */}
-      <div className="px-4 py-2 bg-gray-50 dark:bg-gray-750 flex justify-between text-sm">
-        <div className="flex items-center">
-          <Clock className="h-4 w-4 text-gray-500 dark:text-gray-400 mr-1" />
-          <span className="text-gray-900 dark:text-gray-100 font-medium">{startTime}</span>
-        </div>
-        <div className="text-gray-500 dark:text-gray-400">
+      {/* Duration */}
+      <div>
+        <span className="text-sm sm:text-base md:text-lg lg:text-lg xl:text-lg text-white">
           {duration}
-        </div>
-        <div className="flex items-center">
-          <Clock className="h-4 w-4 text-gray-500 dark:text-gray-400 mr-1" />
-          <span className="text-gray-900 dark:text-gray-100 font-medium">{endTime}</span>
-        </div>
+        </span>
       </div>
+    </div>
+  </div>
+{/* Select/Hide Button */}
+        <button
+          onClick={toggleCardBody}
+          className="px-3 py-1 bg-white text-[#1765F3] font-medium text-sm rounded-lg shadow-md hover:bg-gray-100 transition"
+        >
+          {isCardBodyVisible ? 'Hide' : 'Select'}
+        </button>
+</div>
       
-      {/* Seat selection area (shown when expanded) */}
-      {expanded && (
-        <div className="px-4 py-4 space-y-4">
-          {confirmStep ? (
-            /* Ticket confirmation form */
-            <div className="space-y-4 bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Confirm Your Booking</h3>
-              
-              {/* Display selected seat and boarding/dropping points */}
-              <div className="space-y-2">
+{/* Conditional rendering for card body */}
+      {isCardBodyVisible && (
+        <div>
+            {/* Conditional rendering for selection or confirmation step */}
+                {confirmStep ? (
+            /* Confirmation Step */
+            <div className="px-4 py-4 space-y-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                   Confirm Your Booking
+              </h3>
+                            <div className="space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Selected Seat:</span>
-                  <span className="font-medium">{selectedSeat?.seatName} (₹{selectedSeat ? calculateTotalFare(selectedSeat) : '0'})</span>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                  Selected Seat:
+                  </span>
+                  <span className="font-medium text-sm">
+                   {selectedSeat?.seatName} (₹{selectedSeat ? calculateTotalFare(selectedSeat) : '0'})
+                  </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Boarding Point:</span>
-                  <span className="font-medium">{selectedBoardingPoint?.name}</span>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                  Boarding Point:
+                  </span>
+                  <span className="font-medium text-sm">
+                   {selectedBoardingPoint?.name}
+                  </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Dropping Point:</span>
-                  <span className="font-medium">{selectedDroppingPoint?.name}</span>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                  Dropping Point:
+                  </span>
+                  <span className="font-medium text-sm">
+                    {selectedDroppingPoint?.name}
+                  </span>
                 </div>
               </div>
-              
-              {/* Passenger info fields */}
-              <div className="space-y-2">
-                <h4 className="text-md font-medium text-gray-900 dark:text-white">Passenger Information</h4>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
-                  <div className="flex items-center px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
-                    <User className="h-4 w-4 text-gray-500 dark:text-gray-400 mr-2" />
-                    <span>{userProfile.name || "Not provided"}</span>
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone</label>
-                  <div className="flex items-center px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
-                    <Phone className="h-4 w-4 text-gray-500 dark:text-gray-400 mr-2" />
-                    <span>{userProfile.mobile || "Not provided"}</span>
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
-                  <div className="flex items-center px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
-                    <Mail className="h-4 w-4 text-gray-500 dark:text-gray-400 mr-2" />
-                    <span>{userProfile.email || "Not provided"}</span>
-                  </div>
-                </div>
-              </div>
-              
+                            
               {/* Total fare calculation with detailed breakdown */}
               <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
                 {selectedSeat && (
                   <>
-                    {/* Display fare breakdown if available */}
-                    {(selectedSeat.fare || 
+                                        {(selectedSeat.fare || 
                      (selectedSeat.window && selectedSeat.window.fare) || 
                      (selectedSeat.aisle && selectedSeat.aisle.fare)) && (
                       <>
@@ -494,35 +471,28 @@ export function BusCard({
                     )}
                   </>
                 )}
-                <div className="flex justify-between font-medium mt-2">
+                <div className="flex justify-between font-medium mt-2 text-sm">
                   <span>Total Fare:</span>
                   <span>₹{selectedSeat ? calculateTotalFare(selectedSeat) : '0'}</span>
                 </div>
               </div>
-              
-              {/* Error message */}
-              {bookingError && (
-                <div className="text-red-500 text-sm bg-red-50 dark:bg-red-900/20 p-2 rounded">
-                  {bookingError}
-                </div>
-              )}
-              
+                            
               {/* Action buttons */}
               <div className="flex space-x-2 pt-2">
                 <button
-                  onClick={() => setConfirmStep(false)}
-                  className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg flex-1 transition-colors hover:bg-gray-200 dark:hover:bg-gray-600"
+                  onClick={() => setConfirmStep(false)} // Go back to selection step
+                  className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg flex-1 transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 text-sm"
                 >
                   Back
                 </button>
                 <button
                   onClick={handleBookTicket}
                   disabled={isProcessing}
-                  className="px-4 py-2 bg-yellow-500 text-white rounded-lg flex-1 transition-colors hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                  className="px-2 py-1 bg-yellow-500 text-white rounded-lg flex-1 transition-colors hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center text-sm"
                 >
                   {isProcessing ? (
                     <>
-                      <Loader2 className="animate-spin h-4 w-4 mr-2" />
+                      <Loader2 className="animate-spin h-3 w-3 mr-1" />
                       Processing...
                     </>
                   ) : (
@@ -532,86 +502,71 @@ export function BusCard({
               </div>
             </div>
           ) : (
-            /* Seat selection view */
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Seat selection - left column */}
-                <div>
-                  <h3 className="text-md font-medium text-gray-900 dark:text-white mb-3">Select Seat</h3>
-                  
-                  {/* Display seats by type */}
-                  <div className="space-y-4">
-                    {Object.keys(seatsByType).map(type => (
-                      <div key={type} className="space-y-2">
-                        <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400">{type} Seats</h4>
-                        <div className="grid grid-cols-2 gap-2">
-                          {seatsByType[type].map(seat => (
-                            <button
-                              key={seat.id || seat.seat_id}
-                              onClick={() => handleSeatClick(seat)}
-                              className={`p-2 rounded-lg border text-left ${
-                                selectedSeat?.id === seat.id || selectedSeat?.seat_id === seat.seat_id
-                                  ? 'border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20' 
-                                  : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750'
-                              }`}
-                            >
-                              <div className="flex justify-between items-center">
-                                <span className="font-medium text-gray-900 dark:text-white">
-                                  {seat.label || `Seat ${seat.seatName || seat.seatNumber}`}
-                                </span>
-                                {(selectedSeat?.id === seat.id || selectedSeat?.seat_id === seat.seat_id) && (
-                                  <Check className="h-4 w-4 text-yellow-500" />
-                                )}
-                              </div>
-                              <span className="text-sm text-gray-500 dark:text-gray-400">₹{calculateTotalFare(seat)}</span>
-                            </button>
-                          ))}
+            /* Selection Step */
+            <div className="px-4 py-4 space-y-4">
+              {/* Pickup and dropping dropdowns */}
+          <div className="space-y-4">
+            <LocationDropdown
+              label="Boarding Point"
+              points={allBoardingPoints || []}
+              selectedPoint={selectedBoardingPoint}
+              setSelectedPoint={setSelectedBoardingPoint}
+              isOpen={isBoardingOpen}
+              setIsOpen={setIsBoardingOpen}
+              defaultPoint={typeof boardingPoints[0] === 'string' ? boardingPoints[0] : undefined}
+            />
+            <LocationDropdown
+              label="Dropping Point"
+              points={allDroppingPoints || []}
+              selectedPoint={selectedDroppingPoint}
+              setSelectedPoint={setSelectedDroppingPoint}
+              isOpen={isDroppingOpen}
+              setIsOpen={setIsDroppingOpen}
+              defaultPoint={typeof droppingPoints[0] === 'string' ? droppingPoints[0] : undefined}
+            />
+          </div>
+
+          {/* Seat selection area */}
+          <div>
+            <h3 className="text-md font-medium text-gray-900 dark:text-white mb-3">
+              Select Seat
+            </h3>
+            <div className="space-y-4">
+              {Object.keys(seatsByType).map((type) => (
+                <div key={type} className="space-y-2">
+                  <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                    {type} Seats
+                  </h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {seatsByType[type].map((seat) => (
+                      <button
+                        key={seat.id || seat.seat_id}
+                        onClick={() => handleSeatClick(seat)} // Directly proceed to the next step
+                        className={`p-1 rounded-lg border text-left ${
+                          selectedSeat?.id === seat.id || selectedSeat?.seat_id === seat.seat_id
+                            ? 'border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20'
+                            : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center">
+                          <span className="font-medium text-sm text-gray-900 dark:text-white">
+                            {seat.label || `Seat ${seat.seatName || seat.seatNumber}`}
+                          </span>
                         </div>
-                      </div>
+                        <span className="text-sm text-gray-500 dark:text-gray-400">
+                          ₹{calculateTotalFare(seat)}
+                        </span>
+                      </button>
                     ))}
                   </div>
                 </div>
-                
-                {/* Boarding & dropping selection - right column */}
-                <div className="space-y-4">
-                  {/* Boarding points selector */}
-                  <LocationDropdown
-                    label="Boarding Point"
-                    points={allBoardingPoints || []}
-                    selectedPoint={selectedBoardingPoint}
-                    setSelectedPoint={setSelectedBoardingPoint}
-                    isOpen={isBoardingOpen}
-                    setIsOpen={setIsBoardingOpen}
-                    defaultPoint={typeof boardingPoints[0] === 'string' ? boardingPoints[0] : undefined}
-                  />
-                  
-                  {/* Dropping points selector */}
-                  <LocationDropdown
-                    label="Dropping Point"
-                    points={allDroppingPoints || []}
-                    selectedPoint={selectedDroppingPoint}
-                    setSelectedPoint={setSelectedDroppingPoint}
-                    isOpen={isDroppingOpen}
-                    setIsOpen={setIsDroppingOpen}
-                    defaultPoint={typeof droppingPoints[0] === 'string' ? droppingPoints[0] : undefined}
-                  />
-                  
-                  {/* Proceed button */}
-                  <div className="pt-4">
-                    <button
-                      onClick={handleProceedClick}
-                      disabled={!selectedSeat || !selectedBoardingPoint || !selectedDroppingPoint}
-                      className="w-full px-4 py-2 bg-yellow-500 text-white rounded-lg transition-colors hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Proceed
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </>
+              ))}
+            </div>
+          </div>
+</div>
           )}
-        </div>
-      )}
+                                </div>
+                    )}
     </div>
   );
 }

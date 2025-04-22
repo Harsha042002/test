@@ -68,7 +68,7 @@ export function Logo(props: React.SVGProps<SVGSVGElement>) {
           fill="#FBE822"
         />
       </svg>
-    );
+    ); 
   } else {
     // Blue variant for light mode
     return (

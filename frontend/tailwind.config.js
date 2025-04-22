@@ -1,8 +1,7 @@
 /** @type {import('tailwindcss').Config} */
-export default {
+module.exports = {
     content: [
-        './index.html',
-        './src/**/*.{js,ts,jsx,tsx}',
+                './src/**/*.{js,jsx,ts,tsx}', // Ensure all files are included
     ],
     darkMode: 'class',
     theme: {
@@ -33,6 +32,15 @@ export default {
                             content: '""',
                         },
                     },
+                },
+            },
+animation: {
+                'dots': 'dots 1.2s infinite',
+            },
+            keyframes: {
+                dots: {
+                    '0%, 80%, 100%': { transform: 'scale(0)' },
+                    '40%': { transform: 'scale(1)' },
                 },
             },
         },

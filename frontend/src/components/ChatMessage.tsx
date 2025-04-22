@@ -1,10 +1,12 @@
-import { format } from 'date-fns';
 import ReactMarkdown from 'react-markdown';
 import { Message } from '../types';
 import { BusCard } from './Buscard';
 import { toast } from 'react-toastify';
 import { useEffect, useState } from 'react';
+import { useTheme } from '../context/ThemeContext';
 import { useBusRoutes } from '../hooks/useBusRoutes';
+
+
 
 interface ChatMessageProps {
   message: Message;
@@ -19,11 +21,13 @@ export function ChatMessage({ message }: ChatMessageProps) {
     mobile: '',
     email: '',
     name: '',
-    gender: 'Male'
+    gender: '',
   });
   
   // Use state to track which bus routes to display
   const [displayRoutes, setDisplayRoutes] = useState(message.busRoutes || []);
+  const { theme } = useTheme();
+  const isLoading = message.isLoading || false;
 
   // Add useEffect for loading user profile
   useEffect(() => {
@@ -203,11 +207,11 @@ export function ChatMessage({ message }: ChatMessageProps) {
   }, [showBusRoutes, displayRoutes]);
 
   return (
-    <div className="p-2"> 
-      <div className={`flex gap-4 py-4 ${isUser ? 'justify-end' : 'justify-start'}`}>
+    <div className={`p-1 ${isUser ? 'text-right' : 'text-left'}`}> 
+      <div className={`flex gap-2 py-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
         {!isUser && (
           <div className="flex-shrink-0">
-            <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center overflow-hidden">
+            <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center ">
               <img
                 src="/src/assets/aiimg.png"
                 alt="AI Icon"
@@ -219,20 +223,21 @@ export function ChatMessage({ message }: ChatMessageProps) {
         )}
         <div className={`flex-1 space-y-2 ${isUser ? 'text-right' : 'text-left'}`}>
           <div className="flex items-center gap-2 justify-between">
-            <span className="font-medium text-gray-900 dark:text-gray-100">
-              {isUser 
-                ? 'You'
-                : (<><span className="text-[#1765f3] dark:text-[#fbe822]">Ṧ</span>.AI</>)}
-            </span>
-            <span className="text-sm text-gray-500 dark:text-gray-400">
-              {format(message.timestamp, 'h:mm a')}
-            </span>
+          <span className="font-medium text-gray-900 dark:text-gray-100">
+             {!isUser && (<><span className="text-[#1765f3] dark:text-[#fbe822]">Ṧ</span>.AI</>)}
+          </span>
           </div>
-          
-          {/* Check if message has bus routes - either from props or extracted */}
-          {showBusRoutes ? (
+
+          {/* Show loading animation or message content */}
+          {!isUser && isLoading ? (
+            <div className="flex justify-start items-center">
+              <div className="w-2 h-2 bg-blue-500 dark:bg-yellow-500 rounded-full animate-dots"></div>
+              <div className="w-2 h-2 bg-blue-500 dark:bg-yellow-500 rounded-full animate-dots"></div>
+              <div className="w-2 h-2 bg-blue-500 dark:bg-yellow-500 rounded-full animate-dots"></div>
+            </div>
+          ) : showBusRoutes ? (  
             <div className="w-full">
-              {/* First show the text response - FIXED: filter out JSON part */}
+              {/* First show the text response */}
               {message.content && (
                 <div className="prose dark:prose-invert max-w-none mb-4">
                   <ReactMarkdown>
@@ -244,7 +249,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
               )}
               
               {/* Then display the bus cards */}
-              <div className="grid grid-cols-1 gap-6">
+              <div className="grid grid-cols-3 gap-2">
                 {displayRoutes.map(route => (
                   <BusCard
                     key={route.id}
@@ -267,7 +272,24 @@ export function ChatMessage({ message }: ChatMessageProps) {
         {isUser && (
           <div className="flex-shrink-0">
             <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">You</span>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" className="w-7 h-7">
+                <circle
+                  cx="256"
+                  cy="256"
+                  r="256"
+                  fill={theme === "dark" ? "#FBE822" : "#1765F3"}
+                />
+                <circle
+                  cx="256"
+                  cy="192"
+                  r="80"
+                  fill={theme === "dark" ? "#1765F3" : "#FBE822"}
+                />
+                <path
+                  d="M256 288 C 160 288, 80 352, 80 432 L 432 432 C 432 352, 352 288, 256 288 Z"
+                  fill={theme === "dark" ? "#1765F3" : "#FBE822"}
+                />
+              </svg>
             </div>
           </div>
         )}
