@@ -9,6 +9,7 @@ export default function LoginForm() {
     const [otp, setOtp] = useState('');
     const [isOtpSent, setIsOtpSent] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [isResending, setIsResending] = useState(false); // State for resend OTP button
     const { theme } = useTheme();
     const { onClose } = useLoginModal();
 
@@ -27,6 +28,18 @@ export default function LoginForm() {
             toast.error(error.message);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleResendOTP = async () => {
+        setIsResending(true);
+        try {
+            await authService.sendOTP(mobileNumber); // Reuse the sendOTP API
+            toast.success('OTP resent successfully!');
+        } catch (error: any) {
+            toast.error(error.message || 'Failed to resend OTP');
+        } finally {
+            setIsResending(false);
         }
     };
 
@@ -108,6 +121,14 @@ export default function LoginForm() {
                         className={`w-full py-2 px-4 rounded-lg ${theme === 'dark' ? 'bg-[#FBE822] text-[#1765F3]' : 'bg-[#1765F3] text-[#FBE822]'}`}
                     >
                         {isLoading ? 'Verifying...' : 'Verify OTP'}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleResendOTP}
+                        disabled={isResending}
+                        className={`w-full mt-2 py-2 px-4 rounded-lg border ${theme === 'dark' ? 'bg-[#1e1e1e] text-white' : 'bg-[#f3f4f6] text-gray-900'}`}
+                    >
+                        {isResending ? 'Resending...' : 'Resend OTP'}
                     </button>
                 </>
             )}

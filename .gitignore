@@ -30,4 +30,5 @@ ai_usage_logs/
 
 # Environment variables
 .env*
-!.env.example
+!.env.example.env
+.env

@@ -20,7 +20,7 @@ interface ConversationDetail {
 
 export const conversationService = {
     async getUserConversations(): Promise<UserChat[]> {
-        const token = localStorage.getItem('auth_token');
+        const token = localStorage.getItem('access_token');
         if (!token) {
             throw new Error('Not authenticated');
         }
@@ -40,7 +40,7 @@ export const conversationService = {
     },
 
     async getConversation(conversationId: string): Promise<ConversationDetail> {
-        const token = localStorage.getItem('auth_token');
+        const token = localStorage.getItem('access_token');
         if (!token) {
             throw new Error('Not authenticated');
         }
@@ -60,7 +60,7 @@ export const conversationService = {
     },
 
     async deleteAllUserConversations(): Promise<{ status: string, message: string }> {
-        const token = localStorage.getItem('auth_token');
+        const token = localStorage.getItem('access_token');
         if (!token) {
             throw new Error('Not authenticated');
         }

@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Plus, X, MessageSquare, User } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { Chat } from '../types';
 import { Logo } from './Logo';
-import { UserChats } from './UserChats';
 import { useAuth } from '../hooks/useAuth';
 
 interface SidebarProps {
@@ -18,14 +17,39 @@ interface SidebarProps {
 export function Sidebar({ 
   isOpen, 
   onClose, 
-  chats, 
-  onChatSelect, 
-  selectedChatId, 
   onNewChat,
   onLoadConversation
 }: SidebarProps) {
   const isAuthenticated = useAuth();
-  const [activeTab, setActiveTab] = useState<'session' | 'account'>('session');
+  const [userChats, setUserChats] = useState<{ session_id: string; preview: string }[]>([]);
+
+  // Fetch previous chats from backend when authenticated
+  useEffect(() => {
+    const fetchChats = async () => {
+      if (!isAuthenticated) {
+        setUserChats([]);
+        return;
+      }
+      const userStr = localStorage.getItem('user');
+      let user: { id?: string } = {};
+      try {
+        user = userStr && userStr !== "undefined" ? JSON.parse(userStr) : {};
+      } catch {
+        user = {};
+      }
+      if (!user.id) return;
+      try {
+        const res = await fetch(`http://localhost:8000/conversations?user_id=${user.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          setUserChats(data.conversations || []);
+        }
+      } catch (err) {
+        setUserChats([]);
+      }
+    };
+    fetchChats();
+  }, [isAuthenticated]);
 
   // Handle escape key to close sidebar
   useEffect(() => {
@@ -34,7 +58,6 @@ export function Sidebar({
         onClose();
       }
     };
-
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
@@ -50,12 +73,6 @@ export function Sidebar({
       document.body.style.overflow = '';
     };
   }, [isOpen]);
-
-  // Handle user conversation selection
-  const handleUserChatSelect = (conversationId: string) => {
-    onLoadConversation(conversationId);
-    onClose();
-  };
 
   return (
     <aside
@@ -93,67 +110,31 @@ export function Sidebar({
         </button>
       </div>
 
-      {/* Tabs - Only show if authenticated */}
+      {/* Previous conversations */}
       {isAuthenticated && (
-        <div className="flex border-b border-gray-200 dark:border-gray-800">
-          <button
-            onClick={() => setActiveTab('session')}
-            className={`flex-1 py-2 px-4 text-sm font-medium text-center transition-colors ${
-              activeTab === 'session'
-                ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-            }`}
-          >
-            <div className="flex items-center justify-center gap-1">
-              <MessageSquare size={16} />
-              <span>Session</span>
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveTab('account')}
-            className={`flex-1 py-2 px-4 text-sm font-medium text-center transition-colors ${
-              activeTab === 'account'
-                ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-            }`}
-          >
-            <div className="flex items-center justify-center gap-1">
-              <User size={16} />
-              <span>My Chats</span>
-            </div>
-          </button>
+        <div className="h-[calc(100vh-8rem)] overflow-y-auto hide-scrollbar pb-4">
+          <div>
+            {userChats.length === 0 ? (
+              <div className="text-center text-gray-400 mt-8">No previous chats found.</div>
+            ) : (
+              userChats.map((chat) => (
+                <button
+                  key={chat.session_id}
+                  onClick={() => {
+                    onLoadConversation(chat.session_id);
+                    onClose();
+                  }}
+                  className="w-full p-4 text-left hover:bg-gray-100 dark:hover:bg-dark-hover transition-colors duration-200"
+                >
+                  <h3 className="font-medium truncate text-gray-900 dark:text-gray-100">
+                    {chat.preview ? chat.preview.substring(0, 30) : "Previous Chat"}
+                  </h3>
+                </button>
+              ))
+            )}
+          </div>
         </div>
       )}
-
-      {/* Content based on active tab */}
-      <div className="h-[calc(100vh-16rem)] overflow-y-auto hide-scrollbar pb-4">
-        {activeTab === 'session' ? (
-          /* Session-based Chat List */
-          <div>
-            {chats.map((chat) => (
-              <button
-                key={chat.id}
-                onClick={() => {
-                  onChatSelect(chat.id);
-                  onClose();
-                }}
-                className={`w-full p-4 text-left hover:bg-gray-100 dark:hover:bg-dark-hover transition-colors duration-200 ${
-                  selectedChatId === chat.id ? 'bg-gray-100 dark:bg-dark-surface' : ''
-                }`}
-                aria-selected={selectedChatId === chat.id}
-              >
-                <h3 className="font-medium truncate text-gray-900 dark:text-gray-100">{chat.title}</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                  {chat.messages[chat.messages.length - 1]?.content}
-                </p>
-              </button>
-            ))}
-          </div>
-        ) : (
-          /* User Account-based Chat List */
-          <UserChats onChatSelect={handleUserChatSelect} selectedChatId={selectedChatId} />
-        )}
-      </div>
     </aside>
   );
 }

@@ -5,73 +5,90 @@ interface LoginResponse {
   user: {
     id: string;
     name: string;
-    phone: string;
+    mobile: string;
   };
 }
 
 export const authService = {
+  // Send OTP
   async sendOTP(mobile: string): Promise<{ success: boolean; message: string }> {
     try {
+      console.log('Sending OTP request to:', `${BASE_URL_CUSTOMER}/auth/sendotp`);
+      console.log('Request payload:', { mobile });
+
       const response = await fetch(`${BASE_URL_CUSTOMER}/auth/sendotp`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ mobile }),
+        credentials: 'include', // Include cookies for session management
       });
 
-      const data = await response.json();
+      console.log('Response status:', response.status);
+
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to send OTP');
+        const errorData = await response.json();
+        console.error('Error response data:', errorData);
+        throw new Error(errorData.message || 'Failed to send OTP');
       }
 
+      console.log('OTP sent successfully');
       return { success: true, message: 'OTP sent successfully' };
     } catch (error: any) {
+      console.error('Error in sendOTP:', error.message);
       throw new Error(error.message || 'Failed to send OTP');
     }
   },
 
-  async verifyOTP(mobile: string, otp: string): Promise<LoginResponse> {
+  // Verify OTP
+  async verifyOTP(mobile: string, otp: string): Promise<LoginResponse & { profile?: any }> {
     try {
-      console.log('Sending OTP verification request:', { mobile, otp, deviceId: 'postman' });
-
       const response = await fetch(`${BASE_URL_CUSTOMER}/auth/verifyotp`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          mobile,
-          otp: parseInt(otp, 10), // Ensure OTP is sent as a number
-          deviceId: 'postman', // Ensure deviceId is correct
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mobile, otp: parseInt(otp, 10), deviceId: 'web' }),
+        credentials: 'include',
       });
 
-      console.log('Response status:', response.status);
       const data = await response.json();
-      console.log('Response data:', data);
-      console.log(response,"getData")
+      if (!response.ok) throw new Error(data.message || 'Failed to verify OTP');
+      if (!data.token) throw new Error('Invalid response from server: Missing token');
 
-      if (!response.ok) {
-        console.error('Server error:', data.message || 'Unknown error');
-        throw new Error(data.message || 'Failed to verify OTP');
+      // Fetch profile to get canonical user info
+      let profile = null;
+      try {
+        profile = await authService.getProfile();
+      } catch (profileError) {
+        console.error('Error fetching profile after login:', profileError);
       }
 
-      // if (!data.token) {
-      //   console.error('Missing token in response:', data);
-      //   throw new Error('Invalid response from server: Missing token');
-      // }
+      // Always store user as { id, name, mobile }
+      const userObj: { id: string | number; mobile: string; name?: string } = {
+        id: (profile && profile.id) || data.user?.id,
+        mobile:
+          (profile && (profile.mobile || profile.phone)) ||
+          data.user?.mobile ||
+          data.user?.phone ||
+          '',
+      };
+      const resolvedName =
+        (profile && profile.name) ||
+        data.user?.name ||
+        undefined;
+      if (resolvedName) userObj.name = resolvedName;
 
-      localStorage.setItem('auth_token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
+      localStorage.setItem('access_token', data.token);
+      localStorage.setItem('user', JSON.stringify(userObj));
 
-      return data;
+      return { ...data, profile: userObj };
     } catch (error: any) {
-      console.error('Error during OTP verification:', error.message);
+      console.error('Error in verifyOTP:', error.message);
       throw new Error(error.message || 'Failed to verify OTP');
     }
   },
 
+  // Resend OTP
   async resendOTP(mobile: string): Promise<{ success: boolean; message: string }> {
     try {
       const response = await fetch(`${BASE_URL_CUSTOMER}/auth/resendotp`, {
@@ -80,84 +97,41 @@ export const authService = {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ mobile }),
+        credentials: 'include', // Include cookies for session management
       });
 
-      const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to resend OTP');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to resend OTP');
       }
 
       return { success: true, message: 'OTP resent successfully' };
     } catch (error: any) {
+      console.error('Error in resendOTP:', error.message);
       throw new Error(error.message || 'Failed to resend OTP');
     }
   },
 
+  // Logout
   async logout(): Promise<void> {
     try {
-      const token = this.getToken();
-      if (!token) return;
-
-      const response = await fetch(`${BASE_URL_CUSTOMER}/auth/logout`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
+      await fetch(`${BASE_URL_CUSTOMER}/auth/logout`, {
+        method: 'GET',
+        credentials: 'include',
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to logout');
-      }
-
-      this.clearAuth();
     } catch (error) {
-      console.error('Error in logout:', error);
-      this.clearAuth(); // Clear auth even if API call fails
+      console.error('Error in logout:', (error as any).message);
+    } finally {
+            this.clearAuth();
     }
   },
 
-  async refreshToken(): Promise<string> {
-    try {
-      const token = this.getToken();
-      if (!token) throw new Error('No token found');
-
-      const response = await fetch(`${BASE_URL_CUSTOMER}/auth/refresh-token`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to refresh token');
-      }
-
-      const data = await response.json();
-      localStorage.setItem('auth_token', data.token);
-      return data.token;
-    } catch (error) {
-      console.error('Error in refreshToken:', error);
-      this.clearAuth();
-      throw error;
-    }
-  },
-
+  // Get Profile
   async getProfile(): Promise<any> {
     try {
-      const token = this.getToken();
-      if (!token) throw new Error('No token found');
-
       const response = await fetch(`${BASE_URL_CUSTOMER}/auth/profile`, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
+        credentials: 'include', // Include cookies for session management
       });
 
       if (!response.ok) {
@@ -165,64 +139,67 @@ export const authService = {
       }
 
       return await response.json();
-    } catch (error) {
-      console.error('Error in getProfile:', error);
-      throw error;
+    } catch (error: any) {
+      console.error('Error in getProfile:', error.message);
+      throw new Error(error.message || 'Failed to get profile');
     }
   },
 
+  // Clear Authentication Data
   clearAuth() {
-    localStorage.removeItem('auth_token');
+    localStorage.removeItem('access_token');
     localStorage.removeItem('user');
   },
 
+  // Get Token from LocalStorage
   getToken(): string | null {
-    return localStorage.getItem('auth_token');
+    return localStorage.getItem('access_token');
   },
 
+  // Get User from LocalStorage
   getUser() {
     const userStr = localStorage.getItem('user');
     return userStr ? JSON.parse(userStr) : null;
-  }
-};
+  },
 
-export const verifyOTP = async (mobileNumber: string, otp: number) => {
-    try {
-        console.log('Verifying OTP:', { mobileNumber, otp });
-        const response = await fetch('https://api.Ṧ.ai/api/v1/auth/verify-otp', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                mobileNumber,
-                otp,
-                deviceId: "web"
-            }),
-        });
+  // Generic Fetch with Retry on 401
+  async fetchWithRefresh(url: string, opts: RequestInit = {}): Promise<Response> {
+    let response = await fetch(url, { ...opts, credentials: 'include' });
 
-        console.log('Response status:', response.status);
-        const data = await response.json();
-        console.log('Raw response data:', data);
+    if (response.status === 401) {
+      // Refresh token and retry
+      const refreshed = await this.refreshToken();
+      if (!refreshed) {
+        alert('Session expired—please login again');
+        window.location.reload();
+        return Promise.reject(new Error('Session expired'));
+      }
 
-        if (!response.ok) {
-            throw new Error(data.message || 'Failed to verify OTP');
-        }
-
-        if (!data.data?.token) {
-            throw new Error('Invalid response from server: Missing token');
-        }
-
-        // Store token and user data
-        localStorage.setItem('token', data.data.token);
-        localStorage.setItem('user', JSON.stringify(data.data.user || {}));
-
-        return {
-            token: data.data.token,
-            user: data.data.user || {}
-        };
-    } catch (error) {
-        console.error('Error in verifyOTP:', error);
-        throw error;
+      // Retry the original request
+      response = await fetch(url, { ...opts, credentials: 'include' });
     }
+
+    return response;
+  },
+
+  // Refresh Token
+  async refreshToken(): Promise<boolean> {
+    try {
+      const response = await fetch(`${BASE_URL_CUSTOMER}/auth/refresh-token`, {
+        method: 'GET',
+        credentials: 'include', // Include cookies for session management
+      });
+
+      if (!response.ok) {
+        return false;
+      }
+
+      const data = await response.json();
+      localStorage.setItem('access_token', data.token);
+      return true;
+    } catch (error) {
+      console.error('Error in refreshToken:', error);
+      return false;
+    }
+  },
 };

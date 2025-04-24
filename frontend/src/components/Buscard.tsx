@@ -152,7 +152,7 @@ const [isCardBodyVisible, setIsCardBodyVisible] = useState(false); // State to t
   
     try {
       // Get auth token from localStorage
-      const authToken = localStorage.getItem('auth_token');
+      const authToken = localStorage.getItem('access_token');
       if (!authToken) {
         throw new Error('Authentication required');
       }

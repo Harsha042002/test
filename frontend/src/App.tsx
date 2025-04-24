@@ -5,7 +5,7 @@ import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { Sidebar } from './components/Sidebar';
 import { ChatMessage } from './components/ChatMessage';
 import ChatInput from './components/ChatInput';
-import { Chat, Message, BusRoute, Seat } from './types'; // Import all needed types
+import { Chat, Message} from './types'; // Import all needed types
 import { Logo } from './components/Logo';
 import LoginModal from './components/LoginModal';
 import { LoginModalProvider, useLoginModal } from './context/loginModalContext';
@@ -17,44 +17,8 @@ import { authService } from './services/api'; // Import authService for logout f
 import ErrorBoundary from './components/ErrorBoundary';
 import { conversationService } from './services/conversationService'; // Import conversationService
 
-// Define a type for the trip data
-interface TripRecommendation {
-    window?: {
-        seatNumber: string;
-        price: string;
-        seat_id: string | number;
-    };
-    aisle?: {
-        seatNumber: string;
-        price: string;
-        seat_id: string | number;
-    };
-}
 
-interface Trip {
-    tripId: string;
-    from: string;
-    to: string;
-    rating: string;
-    duration: string;
-    departureTime: string;
-    arrivalTime: string;
-    boardingPoint: string;
-    droppingPoint: string;
-    all_boarding_points?: any[]; // Add this to support boarding points dropdown
-    all_dropping_points?: any[]; // Add this to support dropping points dropdown
-    recommendations: {
-        reasonable: TripRecommendation;
-        premium: TripRecommendation;
-        budget_friendly: TripRecommendation;
-        [key: string]: TripRecommendation; // Allow any other categories
-    };
-}
 
-interface JsonData {
-    trips?: Trip[];
-    [key: string]: any; // Allow any other properties
-}
 
 const mockChats: Chat[] = [
     {
@@ -99,13 +63,22 @@ function Layout() {
 
 
     const handleSendMessage = useCallback(async (content: string) => {
-        // if (!isChatStarted) {
-        //     setIsChatStarted(true); // Mark chat as started
-        // }
+        const userStr = localStorage.getItem('user');
+let user: { id?: string; name?: string; mobile?: string } = {};
+try {
+          user = userStr && userStr !== "undefined" ? JSON.parse(userStr) : {};
+} catch {
+                        user = {};
+}
+console.log('DEBUG user object:', user); // <--- ADD THIS LINE
+if (!user.id || !user.mobile) {
+    toast.error("Please login to chat.");
+    return;
+}
 
         const newMessageId = Date.now().toString();
 
-        // Add the user's message to the chat
+        // Add the user's message to the chat immediately
         const userMessage: Message = {
             id: newMessageId,
             content,
@@ -132,10 +105,10 @@ function Layout() {
                             ...chat.messages,
                             {
                                 id: loadingMessageId,
-                                content: '', // Empty content initially
+                                content: '',
                                 role: 'assistant',
                                 timestamp: new Date(),
-                                isLoading: true, // Mark this message as loading
+                                isLoading: true,
                             },
                         ],
                         lastUpdated: new Date(),
@@ -145,82 +118,42 @@ function Layout() {
         );
 
         try {
-            const response = await fetch('http://localhost:8000/query', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'text/event-stream',
-                },
-                body: JSON.stringify({
-                    query: content,
-                    session_id: localStorage.getItem('sessionId') || null,
-                }),
-            });
+            // Prepare request body
+const session_id = localStorage.getItem('sessionId') || undefined;
+            const body = {
+                query: content,
+                id: Number(user.id),
+                name: user.name,
+                mobile: user.mobile, // always use mobile
+                ...(session_id && { session_id }),
+            };
 
-            if (!response.ok) {
+// Use fetchWithRefresh for token refresh logic
+            const response = await authService.fetchWithRefresh('http://localhost:8000/query', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+                            });
+
+            if (!response.ok || !response.body) {
                 throw new Error(`HTTP error! Status: ${response.status}`);
             }
 
-            const reader = response.body?.getReader();
+// Update sessionId from response header if present
+            const newSessionId = response.headers.get('x-session-id');
+            if (newSessionId) localStorage.setItem('sessionId', newSessionId);
+
+            // Stream the plain text answer
+            const reader = response.body.getReader();
             const decoder = new TextDecoder();
-
-            if (!reader) {
-                throw new Error('No response body reader available');
-            }
-
             let assistantMessage = '';
-            let jsonData: JsonData | null = null;
-
+            
             while (true) {
                 const { value, done } = await reader.read();
                 if (done) break;
+assistantMessage += decoder.decode(value, { stream: true });
 
-                const chunk = decoder.decode(value);
-                const lines = chunk.split('\n');
-
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        try {
-                            const data = JSON.parse(line.slice(6));
-                            if (data.error) {
-                                throw new Error(data.error);
-                            }
-
-                            if (data.json_data) {
-                                jsonData = data.json_data;
-                                console.log("Received JSON data for bus routes:", jsonData);
-
-                                // Add default boarding/dropping points if not provided
-                                if (jsonData && jsonData.trips && Array.isArray(jsonData.trips)) {
-                                    jsonData.trips = jsonData.trips.map(trip => {
-                                        // Create default boarding points array if not provided
-                                        if (!trip.all_boarding_points) {
-                                            trip.all_boarding_points = [{
-                                                id: `${trip.tripId}-boarding-default`,
-                                                name: trip.boardingPoint,
-                                                landmark: 'Main Stop',
-                                                time: trip.departureTime
-                                            }];
-                                        }
-
-                                        // Create default dropping points array if not provided
-                                        if (!trip.all_dropping_points) {
-                                            trip.all_dropping_points = [{
-                                                id: `${trip.tripId}-dropping-default`,
-                                                name: trip.droppingPoint,
-                                                landmark: 'Main Stop',
-                                                time: trip.arrivalTime
-                                            }];
-                                        }
-
-                                        return trip;
-                                    });
-                                }
-                            }
-
-                            if (data.text) {
-                                assistantMessage += data.text;
-
+                                // Update the loading message with the streamed content
                                 setChats((prevChats) =>
                                     prevChats.map((chat) =>
                                         chat.id === selectedChatId
@@ -230,9 +163,8 @@ function Layout() {
                                                     message.id === loadingMessageId
                                                         ? {
                                                             ...message,
-                                                            content: assistantMessage, // Update with backend response
-                                                            isLoading: false, // Remove loading state
-                                                            rawData: jsonData || message.rawData, // Add raw data if available
+                                                            content: assistantMessage,
+                                                            isLoading: false,
                                                         }
                                                         : message
                                                 ),
@@ -241,129 +173,35 @@ function Layout() {
                                             : chat
                                     )
                                 );
+}
 
-                                // Process JSON data into bus routes if available
-                                if (jsonData && jsonData.trips) {
-                                    const busRoutes: BusRoute[] = [];
-
-                                    console.log("Processing trips for bus routes:", jsonData.trips.length);
-
-                                    for (const trip of jsonData.trips) {
-                                        if (trip.tripId && trip.from && trip.to && trip.recommendations) {
-                                            console.log(`Processing trip ${trip.tripId}`);
-
-                                            const busRoute: BusRoute = {
-                                                id: trip.tripId,
-                                                from: trip.from,
-                                                to: trip.to,
-                                                rating: parseFloat(trip.rating) || 4.5,
-                                                duration: trip.duration || "Unknown",
-                                                startTime: trip.departureTime || "Unknown",
-                                                endTime: trip.arrivalTime || "Unknown",
-                                                boardingPoints: [trip.boardingPoint || "Default Boarding"],
-                                                droppingPoints: [trip.droppingPoint || "Default Dropping"],
-                                                seats: [],
-                                            };
-
-                                            const seats: Seat[] = [];
-                                            for (const category in trip.recommendations) {
-                                                const catData = trip.recommendations[category];
-
-                                                if (catData.window && catData.window.seatNumber) {
-                                                    seats.push({
-                                                        id: catData.window.seat_id || `${trip.tripId}-${catData.window.seatNumber}-w`,
-                                                        x: 0,
-                                                        y: parseInt(catData.window.seatNumber) || 0,
-                                                        seatName: catData.window.seatNumber,
-                                                        price: parseInt(catData.window.price) || 0,
-                                                        totalFare: parseInt(catData.window.price) || 0,
-                                                        isOccupied: false,
-                                                        availabilityStatus: 'A',
-                                                        isReservedForFemales: false,
-                                                        isReservedForMales: false,
-                                                        fare: { "Base Fare": parseInt(catData.window.price) || 0, GST: 0, Discount: 0 },
-                                                        label: `Window ${catData.window.seatNumber}`,
-                                                        available: true,
-                                                        hasStaticFare: true,
-                                                        isDummy: false,
-                                                        type: category === 'premium' ? 'Premium' :
-                                                            category === 'budget_friendly' ? 'Budget-Friendly' : 'Regular',
-                                                    });
-                                                }
-
-                                                if (catData.aisle && catData.aisle.seatNumber) {
-                                                    seats.push({
-                                                        id: catData.aisle.seat_id || `${trip.tripId}-${catData.aisle.seatNumber}-a`,
-                                                        x: 1,
-                                                        y: parseInt(catData.aisle.seatNumber) || 0,
-                                                        seatName: catData.aisle.seatNumber,
-                                                        price: parseInt(catData.aisle.price) || 0,
-                                                        totalFare: parseInt(catData.aisle.price) || 0,
-                                                        isOccupied: false,
-                                                        availabilityStatus: 'A',
-                                                        isReservedForFemales: false,
-                                                        isReservedForMales: false,
-                                                        fare: { "Base Fare": parseInt(catData.aisle.price) || 0, GST: 0, Discount: 0 },
-                                                        label: `Aisle ${catData.aisle.seatNumber}`,
-                                                        available: true,
-                                                        hasStaticFare: true,
-                                                        isDummy: false,
-                                                        type: category === 'premium' ? 'Premium' :
-                                                            category === 'budget_friendly' ? 'Budget-Friendly' : 'Regular',
-                                                    });
-                                                }
-                                            }
-
-                                            console.log(`Created ${seats.length} seats for trip ${trip.tripId}`);
-
-                                            busRoute.seats = seats;
-
-                                            if (seats.length > 0) {
-                                                busRoutes.push(busRoute);
-                                                console.log(`Added bus route ${trip.tripId} with ${seats.length} seats`);
-                                            } else {
-                                                console.warn(`Bus route ${trip.tripId} has no valid seats, not displaying card`);
-                                            }
-                                        } else {
-                                            console.warn("Trip missing critical data:", trip);
-                                        }
-                                    }
-
-                                    if (busRoutes.length > 0) {
-                                        setChats((prevChats) =>
-                                            prevChats.map((chat) =>
-                                                chat.id === selectedChatId
-                                                    ? {
-                                                        ...chat,
-                                                        messages: chat.messages.map((message) =>
-                                                            message.id === loadingMessageId
-                                                                ? {
-                                                                    ...message,
-                                                                    busRoutes, // Add bus routes to the message
-                                                                }
-                                                                : message
-                                                        ),
-                                                        lastUpdated: new Date(),
-                                                    }
-                                                    : chat
-                                            )
-                                        );
-                                        console.log(`Added ${busRoutes.length} bus route cards to message:`, busRoutes);
-                                    } else {
-                                        console.warn("No valid bus routes found in response");
-                                    }
-                                }
-                            }
-                        } catch (e) {
-                            console.error('Error parsing SSE data:', e);
-                        }
+// Fetch & render history by user_id and session_id (only once)
+if (user.id && newSessionId) {
+    const histRes = await authService.fetchWithRefresh(
+        `http://localhost:8000/history?user_id=${user.id}&session_id=${newSessionId}`
+    );
+    if (histRes && histRes.ok) {
+const js = await histRes.json();
+                setChats((prevChats) =>
+            prevChats.map((chat) =>
+                chat.id === selectedChatId
+                    ? {
+                        ...chat,
+                        messages: js.history.map((msg: any, idx: number) => ({
+                            id: `${selectedChatId}-${idx}`,
+                            role: msg.role,
+                            content: msg.content,
+                            timestamp: new Date(),
+                        })),
+                        lastUpdated: new Date(),
                     }
-                }
+                    : chat
+            )
+        );
+                    }
             }
         } catch (error) {
             console.error('Error sending query:', error);
-
-            // Update the loading message with an error message
             setChats((prevChats) =>
                 prevChats.map((chat) =>
                     chat.id === selectedChatId
@@ -374,7 +212,7 @@ function Layout() {
                                     ? {
                                         ...message,
                                         content: 'Sorry, something went wrong. Please try again.',
-                                        isLoading: false, // Remove loading state
+                                        isLoading: false,
                                     }
                                     : message
                             ),
@@ -567,8 +405,8 @@ function Layout() {
                             </div>
                             {showLogout && (
                                 <button
-                                    onClick={() => {
-                                        authService.clearAuth();
+                                    onClick={async () => {
+await authService.logout();
                                         window.dispatchEvent(new Event("storage"));
                                         toast.success("Logged out successfully!");
                                         setShowLogout(false);
