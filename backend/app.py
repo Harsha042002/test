@@ -1,6 +1,6 @@
 # app.py
 import os, json, uuid
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.responses import (
@@ -37,6 +37,8 @@ genai.configure(api_key=GOOGLE_API_KEY)
 
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "freshbus_info")
 QDRANT_PATH       = os.getenv("QDRANT_PATH", "./qdrant_data")
+
+
 
 # ─── BUILD RAG ON STARTUP ────────────────────────────────────────────────────
 @asynccontextmanager
@@ -101,9 +103,9 @@ class VerifyOTPRequest(OTPRequest):
 class QueryRequest(BaseModel):
     query:      str
     id:         int
-    name:       str
+    name: Optional[str] = None  
     mobile:     str
-    session_id: str = None
+    session_id: Optional[str] = None
 
 # ─── AUTH PROXY ENDPOINTS ────────────────────────────────────────────────────
 @app.post("/auth/sendotp", status_code=201)
@@ -214,8 +216,11 @@ async def query(req: QueryRequest, request: Request):
 
     # 2) normalize user data
     user_id = req.id
-    name    = req.name.strip()
-    mobile  = req.mobile.strip()
+    name = None
+    if req.name:
+        stripped = req.name.strip()
+        name = stripped if stripped else None
+    mobile = req.mobile.strip()
 
     # 3) key per‐user per‐session
     session_id = req.session_id or str(uuid.uuid4())

@@ -115,14 +115,26 @@ export const authService = {
   // Logout
   async logout(): Promise<void> {
     try {
-      await fetch(`${BASE_URL_CUSTOMER}/auth/logout`, {
+      const response = await fetch(`${BASE_URL_CUSTOMER}/auth/logout`, {
         method: 'GET',
         credentials: 'include',
       });
+      
+      if (!response.ok) {
+        throw new Error('Logout failed');
+      }
+      
+      // Clear all auth-related items from localStorage
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      localStorage.removeItem('user');
+      localStorage.removeItem('sessionId'); // Also remove session ID
+      
     } catch (error) {
       console.error('Error in logout:', (error as any).message);
     } finally {
-            this.clearAuth();
+      // Ensure data is cleared even if request fails
+      this.clearAuth();
     }
   },
 

@@ -119,3 +119,12 @@ export interface LocationPoint {
   longitude?: number;
   address?: string;
 }
+
+export interface HistoryMessage {
+  role: 'user' | 'assistant' | 'meta';
+  content: string;
+}
+
+export interface ConversationHistory {
+  history: HistoryMessage[];
+}

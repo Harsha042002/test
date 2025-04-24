@@ -123,10 +123,11 @@ const session_id = localStorage.getItem('sessionId') || undefined;
             const body = {
                 query: content,
                 id: Number(user.id),
-                name: user.name,
+                name: user.name || null,
                 mobile: user.mobile, // always use mobile
                 ...(session_id && { session_id }),
             };
+
 
 // Use fetchWithRefresh for token refresh logic
             const response = await authService.fetchWithRefresh('http://localhost:8000/query', {
@@ -139,7 +140,6 @@ const session_id = localStorage.getItem('sessionId') || undefined;
                 throw new Error(`HTTP error! Status: ${response.status}`);
             }
 
-// Update sessionId from response header if present
             const newSessionId = response.headers.get('x-session-id');
             if (newSessionId) localStorage.setItem('sessionId', newSessionId);
 
@@ -175,24 +175,28 @@ assistantMessage += decoder.decode(value, { stream: true });
                                 );
 }
 
-// Fetch & render history by user_id and session_id (only once)
-if (user.id && newSessionId) {
+// Fetch history after streaming is complete
+            if (user.id && newSessionId) {
     const histRes = await authService.fetchWithRefresh(
         `http://localhost:8000/history?user_id=${user.id}&session_id=${newSessionId}`
     );
     if (histRes && histRes.ok) {
-const js = await histRes.json();
+await histRes.json();
+// Instead of replacing messages, merge them with existing ones
                 setChats((prevChats) =>
             prevChats.map((chat) =>
                 chat.id === selectedChatId
                     ? {
                         ...chat,
-                        messages: js.history.map((msg: any, idx: number) => ({
-                            id: `${selectedChatId}-${idx}`,
-                            role: msg.role,
-                            content: msg.content,
+                        messages: [
+                                        ...chat.messages.filter(msg => msg.id !== loadingMessageId),
+{
+                            id: Date.now().toString(),
+                            role: 'assistant',
+                            content: assistantMessage,
                             timestamp: new Date(),
-                        })),
+                        }
+                                    ],
                         lastUpdated: new Date(),
                     }
                     : chat
@@ -244,41 +248,56 @@ const js = await histRes.json();
 
     const loadConversation = useCallback(async (conversationId: string) => {
         try {
-            const conversation = await conversationService.getConversation(conversationId);
+            const userStr = localStorage.getItem('user');
+                             let user: { id?: string; name?: string; mobile?: string } = {};
+try {
+  user = userStr && userStr !== "undefined" ? JSON.parse(userStr) : {};
+            } catch {
+                user = {};
+            }
 
-            const formattedMessages: Message[] = conversation.messages.map((msg: any, index) => {
-                // Create the base message
-                const formattedMessage: Message = {
+            if (!user.id) {
+                toast.error("User not found");
+                return;
+            }
+
+            // Fetch conversation history
+            const historyResponse = await authService.fetchWithRefresh(
+                `http://localhost:8000/history?user_id=${user.id}&session_id=${conversationId}`
+            );
+
+            if (!historyResponse.ok) {
+                throw new Error('Failed to fetch conversation history');
+            }
+
+            const historyData = await historyResponse.json();
+            
+            // Format messages from history
+            const formattedMessages: Message[] = historyData.history
+                .filter((msg: any) => msg.role !== 'meta') // Filter out meta messages
+                .map((msg: any, index: number) => ({
                     id: `${conversationId}-${index}`,
                     role: msg.role as 'user' | 'assistant',
                     content: msg.content,
                     timestamp: new Date(),
-                };
+                isLoading: false
+                }));
 
-                // Only add rawData if it exists in the original message
-                if (msg.rawData) {
-                    formattedMessage.rawData = msg.rawData;
-                }
-
-                // Only add busRoutes if it exists in the original message
-                if (msg.busRoutes) {
-                    formattedMessage.busRoutes = msg.busRoutes;
-                }
-
-                return formattedMessage;
-            });
-
+                // Create new chat with loaded messages
             const loadedChat: Chat = {
                 id: conversationId,
-                title: formattedMessages[0]?.content.substring(0, 30) || 'Loaded Conversation',
+                title: 'Loaded Conversation',
                 messages: formattedMessages,
-                lastUpdated: new Date(conversation.timestamp)
+                lastUpdated: new Date()
             };
 
+// Update chats state
             setChats(prevChats => {
                 const exists = prevChats.some(c => c.id === conversationId);
                 if (exists) {
-                    return prevChats.map(c => c.id === conversationId ? loadedChat : c);
+                    return prevChats.map(c => 
+c.id === conversationId ? loadedChat : c
+);
                 } else {
                     return [loadedChat, ...prevChats];
                 }
@@ -290,7 +309,7 @@ const js = await histRes.json();
             console.error('Error loading conversation:', error);
             toast.error('Failed to load conversation');
         }
-    }, []);
+    }, [setChats, setSelectedChatId]);
 
     // Add new useEffect for booking handler
     useEffect(() => {
